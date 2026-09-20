@@ -1,0 +1,50 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://crispai:${POSTGRES_PASSWORD:-crispai}@postgres:5432/crispai
+      REDIS_URL: redis://redis:6379/0
+      PORT: 3000
+    ports:
+      - "${PORT:-3000}:3000"
+    volumes:
+      - upload:/data/upload
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: crispai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crispai}
+      POSTGRES_DB: crispai
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crispai -d crispai"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres:
+  redis:
+  upload:

@@ -1,0 +1,41 @@
+CrispAI 管理页面（本目录下的全部文件）
+
+Copyright (C) 2026 DyAxy. All rights reserved.
+
+本目录是预编译的管理页面，不是 CrispAI 后端源码的一部分，
+不适用仓库根目录 LICENSE 中的 GNU Affero General Public License。
+
+许可：
+  1. 允许将本目录的文件原样随 CrispAI 一起使用、复制和分发，包括用于商业部署。
+  2. 未经版权人书面许可，不得修改、反编译、反向工程本目录的文件，
+     也不得将其单独或与其他软件一起用于 CrispAI 之外的用途。
+  3. 分发时必须保留本文件和 THIRD-PARTY-NOTICES.txt。
+
+其中包含的第三方开源组件仍按各自的许可证授权，见 THIRD-PARTY-NOTICES.txt。
+
+本目录的文件按“现状”提供，不附带任何明示或暗示的担保；
+在法律允许的范围内，版权人不对因使用它们产生的任何损失承担责任。
+
+------------------------------------------------------------------------------
+
+CrispAI admin dashboard (all files in this directory)
+
+Copyright (C) 2026 DyAxy. All rights reserved.
+
+This directory contains a prebuilt admin dashboard. It is not part of the
+CrispAI backend source code and is NOT covered by the GNU Affero General Public
+License found in the LICENSE file at the repository root.
+
+  1. You may use, copy and redistribute these files, unmodified, together with
+     CrispAI, including for commercial deployments.
+  2. You may not modify, decompile or reverse engineer these files, or use them
+     separately from CrispAI, without written permission from the copyright
+     holder.
+  3. Redistributions must retain this file and THIRD-PARTY-NOTICES.txt.
+
+Third-party open source components included in these files remain licensed
+under their own terms; see THIRD-PARTY-NOTICES.txt.
+
+THESE FILES ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED. TO THE EXTENT PERMITTED BY LAW, THE COPYRIGHT HOLDER SHALL NOT BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM THEIR USE.

@@ -1,0 +1,11 @@
+node_modules
+.env
+.env.*
+!.env.example
+.DS_Store
+*.tsbuildinfo
+
+# 运行时产生的文件
+data
+*.mp3
+logs
