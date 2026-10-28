@@ -31,6 +31,8 @@ export const aiConfigSchema = z.object({
   embeddingModel: z.string().trim().max(200).default(""),
   embeddingBaseUrl: z.union([z.literal(""), apiUrl]).optional(),
   embeddingApiKey: apiKey,
+  knowledgeMode: z.enum(["off", "full", "vector"]).optional(),
+  knowledgeMaxChars: z.number().int().min(2000).max(64000).optional(),
 });
 export type AIConfig = Omit<z.infer<typeof aiConfigSchema>, "apiKey"> & {
   apiKey: string;
@@ -50,6 +52,19 @@ export function resolveEmbeddingConnection(config: AIConfig) {
   const apiKey = config.embeddingApiKey || (sameProvider ? config.apiKey : "");
   if (!hasAIKey(apiKey)) throw new Error("请填写向量接口的独立 API 密钥");
   return { baseUrl, apiKey };
+}
+export const DEFAULT_KNOWLEDGE_MAX_CHARS = 16000;
+export type KnowledgeMode = "off" | "full" | "vector";
+// Existing embedding installations keep vector search; chat-only deployments
+// can use synchronized documents immediately, without another provider.
+export const getKnowledgeMode = (config: AIConfig): KnowledgeMode =>
+  config.knowledgeMode ?? (config.embeddingModel ? "vector" : "full");
+export const getKnowledgeMaxChars = (config: AIConfig) =>
+  config.knowledgeMaxChars ?? DEFAULT_KNOWLEDGE_MAX_CHARS;
+export function validateKnowledgeConfig(config: AIConfig) {
+  if (getKnowledgeMode(config) !== "vector") return;
+  if (!config.embeddingModel) throw new Error("向量模式需要选择向量模型");
+  resolveEmbeddingConnection(config);
 }
 export class AIConfigManager {
   private config: AIConfig;
@@ -79,6 +94,12 @@ export class AIConfigManager {
     const { apiKey, embeddingApiKey, ...config } = this.current();
     return {
       ...config,
+      knowledgeMode: getKnowledgeMode({ ...config, apiKey, embeddingApiKey }),
+      knowledgeMaxChars: getKnowledgeMaxChars({
+        ...config,
+        apiKey,
+        embeddingApiKey,
+      }),
       hasApiKey: hasAIKey(apiKey),
       hasEmbeddingApiKey: hasAIKey(embeddingApiKey),
       configured: hasAIKey(apiKey),
@@ -90,6 +111,17 @@ export class AIConfigManager {
     const current = this.current();
     return {
       ...parsed,
+      ...(parsed.knowledgeMode !== undefined ||
+      current.knowledgeMode !== undefined
+        ? { knowledgeMode: parsed.knowledgeMode ?? current.knowledgeMode }
+        : {}),
+      ...(parsed.knowledgeMaxChars !== undefined ||
+      current.knowledgeMaxChars !== undefined
+        ? {
+            knowledgeMaxChars:
+              parsed.knowledgeMaxChars ?? current.knowledgeMaxChars,
+          }
+        : {}),
       baseUrl: normalizeUrl(parsed.baseUrl),
       apiKey: parsed.apiKey || current.apiKey,
       ...(parsed.embeddingBaseUrl !== undefined ||
@@ -114,7 +146,7 @@ export class AIConfigManager {
       .catch(() => {})
       .then(async () => {
         const config = this.resolve(input);
-        if (config.embeddingModel) resolveEmbeddingConnection(config);
+        validateKnowledgeConfig(config);
         await this.store.save(config);
         this.config = config;
         this.source = "database";

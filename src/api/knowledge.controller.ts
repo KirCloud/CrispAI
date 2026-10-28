@@ -26,7 +26,7 @@ export function createKnowledgeRoutes(deps: Dependencies) {
     if (!parsed.success)
       return c.json({ message: "请检查项目和知识库条目" }, 400);
     if (!deps.ready())
-      return c.json({ message: "请先保存知识库向量模型配置" }, 400);
+      return c.json({ message: "请先选择向量模式并保存向量模型配置" }, 400);
     const entry = await deps.get(parsed.data.payload_id);
     if (!entry || entry.project !== parsed.data.project_id)
       return c.json({ message: "知识库条目不存在" }, 404);

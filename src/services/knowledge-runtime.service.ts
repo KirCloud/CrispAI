@@ -1,6 +1,14 @@
 import * as db from "@/services/db.service";
-import { aiConfig, createEmbedding } from "@/services/openai.service";
-import { resolveEmbeddingConnection } from "@/services/ai-config.service";
+import {
+  aiConfig,
+  createEmbedding,
+  createEmbeddingFor,
+} from "@/services/openai.service";
+import { createKnowledgeContext } from "@/services/knowledge-context.service";
+import {
+  resolveEmbeddingConnection,
+  getKnowledgeMode,
+} from "@/services/ai-config.service";
 import { createKnowledgeSync } from "@/services/knowledge-sync.service";
 export const knowledgeSync = createKnowledgeSync({
   load: (project) => db.getAppSetting("knowledge_source:" + project),
@@ -11,11 +19,14 @@ export const knowledgeSync = createKnowledgeSync({
   pending: db.listPendingSourcePayloads,
   embed: createEmbedding,
   update: db.updatePayloadVector,
+  mode: () => getKnowledgeMode(aiConfig.current()),
   canEmbed: () => {
     try {
       const config = aiConfig.current();
       resolveEmbeddingConnection(config);
-      return Boolean(config.embeddingModel);
+      return (
+        getKnowledgeMode(config) === "vector" && Boolean(config.embeddingModel)
+      );
     } catch {
       return false;
     }
@@ -27,3 +38,10 @@ export function startKnowledgeSync() {
   }, 60_000);
   timer.unref();
 }
+
+export const getKnowledgeContext = createKnowledgeContext({
+  full: db.listKnowledgeText,
+  hasIndexed: db.hasPayload,
+  embed: createEmbeddingFor,
+  match: db.matchPayloads,
+});

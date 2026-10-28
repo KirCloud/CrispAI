@@ -70,6 +70,8 @@ const save = await app.request(origin + "/api/v1/settings/ai", {
     ...defaults,
     apiKey: "integration-secret",
     model: "after",
+    knowledgeMode: "full",
+    knowledgeMaxChars: 16000,
   }),
 });
 assert.equal(save.status, 200);
@@ -78,6 +80,7 @@ const restarted = new AIConfigManager(store, defaults);
 await restarted.initialize();
 assert.equal(restarted.current().model, "after");
 assert.equal(restarted.current().apiKey, "integration-secret");
+assert.equal(restarted.current().knowledgeMode, "full");
 const read = await app.request(origin + "/api/v1/settings/ai", {
   headers: { Cookie },
 });
@@ -110,6 +113,14 @@ try {
   };
   await db.syncSourcePayloads(project, [first]);
   assert.equal(await db.hasPayload(project), false);
+  assert.equal(
+    (await db.listKnowledgeText(project, 16000)).documents[0]?.raw,
+    "First version",
+  );
+  assert.equal(
+    (await db.listKnowledgeText(crypto.randomUUID(), 16000)).total,
+    0,
+  );
   const entry = (await db.listPendingSourcePayloads(project))[0]!;
   const vector = Array(1536).fill(0.1);
   assert.equal(await db.updatePayloadVector(entry, vector), true);
@@ -133,9 +144,14 @@ try {
   assert.equal((await db.listKnowledgeStatus(project)).length, 0);
   assert.equal((await db.listPayloads(project)).length, 0);
   assert.equal((await db.listPayloadsWithVector(project)).length, 0);
+  assert.equal((await db.listKnowledgeText(project, 16000)).total, 0);
+  await db.insertPayload(project, "Long article", "a".repeat(20000), null);
+  const bounded = await db.listKnowledgeText(project, 2000);
+  assert.equal(bounded.total, 1);
+  assert.equal(bounded.documents[0]!.raw.length, 2000);
   assert.equal(
     (await sql`select id from payload where project = ${project}`).length,
-    1,
+    2,
   );
 } finally {
   await sql`delete from project where id = ${project}`;

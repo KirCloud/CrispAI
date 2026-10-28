@@ -16,6 +16,7 @@ type Dependencies = {
   embed: (raw: string) => Promise<number[]>;
   update: (entry: Pending, vector: number[]) => Promise<boolean>;
   canEmbed: () => boolean;
+  mode?: () => "off" | "full" | "vector";
   fetch?: typeof fetchSourceDocuments;
 };
 export function createKnowledgeSync(deps: Dependencies) {
@@ -47,7 +48,8 @@ export function createKnowledgeSync(deps: Dependencies) {
       await deps.apply(project, entries);
       const pending = await deps.pending(project);
       let indexed = 0;
-      if (deps.canEmbed()) {
+      const mode = deps.mode?.() ?? "vector";
+      if (mode === "vector" && deps.canEmbed()) {
         for (const entry of pending) {
           try {
             const vector = await deps.embed(entry.raw);
@@ -60,7 +62,12 @@ export function createKnowledgeSync(deps: Dependencies) {
       }
       const remaining = (await deps.pending(project)).length;
       config.lastSuccess = new Date().toISOString();
-      config.lastMessage = `同步 ${entries.length} 条；本次生成 ${indexed} 条向量，待生成 ${remaining} 条。`;
+      config.lastMessage =
+        mode === "full"
+          ? `同步 ${entries.length} 条，全文模式可直接使用，无需生成向量。`
+          : mode === "off"
+            ? `同步 ${entries.length} 条，知识库使用已关闭。`
+            : `同步 ${entries.length} 条；本次生成 ${indexed} 条向量，待生成 ${remaining} 条。`;
       await deps.save(project, config);
       return publicSource(config);
     } catch {

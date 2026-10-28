@@ -1,7 +1,8 @@
 import type { Context } from "hono";
 import z from "zod";
 import * as db from "@/services/db.service";
-import { createEmbedding, aiConfig } from "@/services/openai.service";
+import { createEmbeddingFor, aiConfig } from "@/services/openai.service";
+import { getKnowledgeMode } from "@/services/ai-config.service";
 import logger from "@/services/logger.service";
 import { validate } from "@/api/validator";
 
@@ -24,46 +25,52 @@ export const saveSchema = validate(
     }),
   }),
 );
-export const saveController = async (c: Context) => {
-  const { project_id, params, payload_id } = await c.req.json();
+export const createPayloadSaveController =
+  (
+    deps = {
+      project: db.getProjectById,
+      config: () => aiConfig.current(),
+      embed: createEmbeddingFor,
+      update: db.updatePayload,
+      insert: db.insertPayload,
+    },
+  ) =>
+  async (c: Context) => {
+    const { project_id, params, payload_id } = await c.req.json();
 
-  const project = await db.getProjectById(project_id);
-  if (!project) return c.json({ message: "查询项目失败" }, 400);
-  if (!aiConfig.current().embeddingModel)
-    return c.json(
-      {
-        message:
-          "使用知识库前请先在 AI 配置中启用并选择向量模型；普通文字回复无需配置",
-      },
-      400,
-    );
+    const project = await deps.project(project_id);
+    if (!project) return c.json({ message: "查询项目失败" }, 400);
+    const config = deps.config();
+    let embedding: number[] | null = null;
+    if (getKnowledgeMode(config) === "vector") {
+      if (!config.embeddingModel)
+        return c.json({ message: "向量模式需要先配置向量模型" }, 400);
+      try {
+        embedding = await deps.embed(config, params.raw);
+      } catch {
+        logger.error("生成知识库向量失败，请检查向量接口配置");
+        return c.json(
+          { message: "生成向量失败，请检查向量接口配置及 1536 维输出" },
+          502,
+        );
+      }
+    }
 
-  let embedding: number[] | undefined;
-  try {
-    embedding = await createEmbedding(params.raw);
-  } catch {
-    logger.error("生成知识库向量失败，请检查向量接口配置");
-  }
-  if (!embedding) {
-    return c.json(
-      { message: "生成向量失败，请检查向量接口配置及 1536 维输出" },
-      502,
-    );
-  }
+    if (payload_id) {
+      await deps.update(
+        payload_id,
+        project_id,
+        params.name,
+        params.raw,
+        embedding,
+      );
+    } else {
+      await deps.insert(project_id, params.name, params.raw, embedding);
+    }
+    return c.json({ message: "成功" });
+  };
 
-  if (payload_id) {
-    await db.updatePayload(
-      payload_id,
-      project_id,
-      params.name,
-      params.raw,
-      embedding,
-    );
-  } else {
-    await db.insertPayload(project_id, params.name, params.raw, embedding);
-  }
-  return c.json({ message: "成功" });
-};
+export const saveController = createPayloadSaveController();
 
 export const deleteSchema = validate(
   "json",

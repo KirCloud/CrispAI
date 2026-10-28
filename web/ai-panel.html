@@ -80,14 +80,33 @@
         <option value="">请先读取模型列表</option>
       </select>
     </div>
-    <div class="kc-field kc-test-options">
-      <div>
-        <label for="enable-embedding">使用知识库向量检索（可选）</label>
-        <p class="kc-muted">
-          普通客服回复无需开启，仍可使用项目提示词。仅在使用知识库时配置。
-        </p>
-      </div>
-      <input id="enable-embedding" type="checkbox" />
+    <div class="kc-field">
+      <label for="knowledge-mode">知识库模式</label>
+      <p class="kc-muted">
+        全文模式直接把最新教程交给对话模型参考，无需向量接口，适合少量文档；向量模式先检索相关片段，适合较大的知识库。
+      </p>
+      <select id="knowledge-mode">
+        <option value="full">全文模式（无需向量模型）</option>
+        <option value="vector">向量检索</option>
+        <option value="off">不使用知识库</option>
+      </select>
+    </div>
+    <div id="knowledge-limit-options" class="kc-field">
+      <label for="knowledge-max-chars">每次引用资料的长度上限（字符）</label>
+      <p class="kc-muted">
+        默认
+        16000，上限包含标题和说明。超出时只发送前面的资料，并标记省略；输入越长，Token
+        用量越高。此设置只限制资料长度，仍需为聊天历史和回复预留上下文。
+      </p>
+      <input
+        id="knowledge-max-chars"
+        type="number"
+        min="2000"
+        max="64000"
+        step="1"
+        value="16000"
+        required
+      />
     </div>
     <div id="embedding-options" hidden>
       <div class="kc-field">
@@ -184,16 +203,15 @@
         </button>
       </div>
       <p id="knowledge-status" class="kc-muted">正在读取知识库状态…</p>
-      <p class="kc-muted">
-        生成索引会把文档正文发送到你配置的向量服务商并产生 API
-        用量。保存并测试接口后生成索引。客服收到问题时会自动检索最相关的 3
-        条资料，交给对话模型参考。AI 回复开关仍在「智能回复」。
+      <p class="kc-muted" id="knowledge-mode-help">
+        全文模式无需生成向量，回复时直接引用最新的同步资料。AI
+        回复开关仍在「智能回复」。
       </p>
       <div id="knowledge-source">
         <h3>文档自动同步</h3>
         <p class="kc-muted">
           支持 V2Board 风格的 knowledge/fetch
-          接口，自动读取目录与正文。只更新有变化的条目，并在向量接口可用时生成索引；来源撤下的条目保留存档并退出检索。
+          接口，自动读取目录与正文，只更新有变化的条目。全文模式同步后直接可用；向量模式自动生成索引。来源撤下的条目保留存档并退出使用。
         </p>
         <label for="source-url">文档 API 地址</label
         ><input
@@ -234,7 +252,7 @@
           ><input id="source-enabled" type="checkbox" /> 开启定时同步</label
         >
         <p class="kc-muted">
-          启用后，变更的教程正文将发送到你配置的向量服务商生成索引，并产生相应
+          同步会把教程保存在本服务。全文模式回复时把资料发给对话模型；向量模式还会把变更正文发给向量服务商生成索引，产生相应
           API 用量。
         </p>
         <div class="kc-actions">
@@ -253,14 +271,16 @@
           尚未配置文档来源
         </p>
       </div>
-      <label
-        ><input type="checkbox" id="reindex-all" />
-        重新生成全部条目（更换向量模型后使用）</label
-      >
-      <div class="kc-actions">
-        <button type="button" id="index-knowledge" class="kc-button">
-          生成知识库向量
-        </button>
+      <div id="knowledge-vector-tools" hidden>
+        <label
+          ><input type="checkbox" id="reindex-all" />
+          重新生成全部条目（更换向量模型后使用）</label
+        >
+        <div class="kc-actions">
+          <button type="button" id="index-knowledge" class="kc-button">
+            生成知识库向量
+          </button>
+        </div>
       </div>
       <p
         id="knowledge-message"

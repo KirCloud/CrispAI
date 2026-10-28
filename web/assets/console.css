@@ -484,3 +484,8 @@ body.kc-console {
   margin-top: 16px;
   flex-wrap: wrap;
 }
+
+#knowledge-vector-tools[hidden],
+#knowledge-limit-options[hidden] {
+  display: none !important;
+}

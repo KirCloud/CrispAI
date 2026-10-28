@@ -33,7 +33,7 @@ export const extendOriginalConsole: MiddlewareHandler = async (c, next) => {
     .on("head", {
       element(element) {
         element.append(
-          '<link rel="stylesheet" href="/console-assets/console.css?v=2"><script type="module" src="/console-assets/extension.js?v=2"></script>',
+          '<link rel="stylesheet" href="/console-assets/console.css?v=3"><script type="module" src="/console-assets/extension.js?v=3"></script>',
           { html: true },
         );
       },

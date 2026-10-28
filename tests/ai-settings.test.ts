@@ -393,3 +393,50 @@ describe("independent embedding connection", () => {
     ).toBe(false);
   });
 });
+
+describe("knowledge modes", () => {
+  test("full mode persists without usable vector credentials and old clients retain its mode and budget", async () => {
+    const { app, manager, store } = await fixture();
+    const input = {
+      ...defaults,
+      knowledgeMode: "full",
+      knowledgeMaxChars: 12000,
+      embeddingBaseUrl: "https://independent.example/v1",
+      embeddingApiKey: "",
+    };
+    const saved = await app.request("/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    expect(saved.status).toBe(200);
+    expect(
+      ((await saved.json()) as { data: { knowledgeMode: string } }).data
+        .knowledgeMode,
+    ).toBe("full");
+    await manager.save({ ...defaults, apiKey: "" });
+    expect(manager.current().knowledgeMode).toBe("full");
+    expect(manager.current().knowledgeMaxChars).toBe(12000);
+    const restarted = new AIConfigManager(store, defaults);
+    await restarted.initialize();
+    expect(restarted.publicConfig().knowledgeMode).toBe("full");
+    expect(restarted.publicConfig().hasApiKey).toBe(true);
+  });
+  test("invalid modes and budgets, or vector mode without a model, fail validation", async () => {
+    const { app } = await fixture();
+    for (const input of [
+      { knowledgeMode: "invalid" },
+      { knowledgeMaxChars: 100 },
+      { knowledgeMaxChars: 64001 },
+      { knowledgeMaxChars: 2000.5 },
+      { knowledgeMode: "vector", embeddingModel: "" },
+    ]) {
+      const response = await app.request("/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...defaults, ...input }),
+      });
+      expect(response.status).toBe(400);
+    }
+  });
+});

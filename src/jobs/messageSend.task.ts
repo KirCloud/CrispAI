@@ -1,8 +1,7 @@
-import {
-  getAIProvider,
-  createEmbedding,
-  aiConfig,
-} from "@/services/openai.service";
+import { getAIProvider } from "@/services/openai.service";
+import type { AIConfig } from "@/services/ai-config.service";
+import { getKnowledgeContext } from "@/services/knowledge-runtime.service";
+import { withKnowledgeContext } from "@/services/knowledge-context.service";
 import * as db from "@/services/db.service";
 import * as telegram from "@/services/telegram.service";
 import * as crisp from "@/services/crisp.service";
@@ -289,38 +288,10 @@ async function handleKeywordReply(
     return msg;
   }
 }
-async function searchDocuments(project: string, query: string, matchCount = 3) {
-  if (!aiConfig.current().embeddingModel) return null;
-  if (!(await db.hasPayload(project))) return null;
-
-  const vector = await createEmbedding(query);
-  if (!vector) return null;
-
-  return await db.matchPayloads(project, vector, matchCount);
-}
 async function handleAIReply(session: Session, body: any, project: any) {
-  const messages: ChatCompletionMessageParam[] = await buildMessages(
-    session,
-    body,
-    project,
-  );
-  const results = await searchDocuments(project.id, body.content);
-  if (results && results.length > 0) {
-    const docs: ChatCompletionMessageParam = {
-      role: "system",
-      content: `相关资料：\n${results
-        .map((r: any) => r.raw)
-        .join("\n----------------\n")}`,
-    };
-    // 将文档信息插入到最后一条用户消息之前
-    if (messages.length > 0) {
-      // 找到最后一条消息的位置
-      const lastIndex = messages.length - 1;
-      // 在最后一条消息之前插入文档信息
-      messages.splice(lastIndex, 0, docs);
-    }
-  }
-  const { client, model } = getAIProvider();
+  const provider = getAIProvider();
+  const messages = await buildMessages(session, body, project, provider);
+  const { client, model } = provider;
   const completion = await client.chat.completions.create({
     messages,
     model,
@@ -346,6 +317,7 @@ async function buildMessages(
   session: Session,
   body: any,
   project: any,
+  config: AIConfig,
 ): Promise<ChatCompletionMessageParam[]> {
   const messages: ChatCompletionMessageParam[] = [];
 
@@ -373,9 +345,21 @@ async function buildMessages(
     };
     session.thread.push(msg);
     messages.push(msg);
+  } else if (body.content?.type?.includes("image")) {
+    messages.push({
+      role: "user",
+      content: [{ type: "image_url", image_url: { url: body.content.url } }],
+    });
   }
 
-  return messages;
+  return withKnowledgeContext(
+    messages,
+    await getKnowledgeContext(
+      project.id,
+      typeof body.content === "string" ? body.content : "",
+      config,
+    ),
+  );
 }
 
 async function handleImageMessage(
@@ -386,13 +370,9 @@ async function handleImageMessage(
 ) {
   if (!project.enableAI || !project.enableAIPic) return;
 
-  const messages = await buildMessages(session, body, project);
-  messages.push({
-    role: "user",
-    content: [{ type: "image_url", image_url: { url: body.content.url } }],
-  });
-
-  const { client, model } = getAIProvider();
+  const provider = getAIProvider();
+  const messages = await buildMessages(session, body, project, provider);
+  const { client, model } = provider;
   const completion = await client.chat.completions.create({
     messages,
     model,

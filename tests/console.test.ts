@@ -47,7 +47,7 @@ test("original dashboard and editor keep their markup with an independent extens
     });
     const html = await response.text();
     expect(response.status).toBe(200);
-    expect(html).toContain("/console-assets/extension.js?v=2");
+    expect(html).toContain("/console-assets/extension.js?v=3");
     expect(html).toContain("/_next/static/");
     expect(html).not.toContain('class="sidebar"');
   }

@@ -106,6 +106,17 @@ export function mountAIForm(form) {
     save.textContent = value ? "处理中…" : "保存配置";
     syncEmbedding();
   };
+  let knowledgeEntries = [];
+  function renderKnowledgeStatus() {
+    const mode = $("#knowledge-mode").value;
+    const indexed = knowledgeEntries.filter((entry) => entry.indexed).length;
+    $("#knowledge-status").textContent =
+      mode === "full"
+        ? `共 ${knowledgeEntries.length} 条资料，全文模式无需向量索引，回复时按字符上限引用。`
+        : mode === "off"
+          ? `共 ${knowledgeEntries.length} 条资料，当前未用于回复。`
+          : `共 ${knowledgeEntries.length} 条，已生成向量 ${indexed} 条，待生成 ${knowledgeEntries.length - indexed} 条。`;
+  }
   const applyState = (config) => {
     hasSavedKey = config.hasApiKey;
     hasSavedEmbeddingKey = config.hasEmbeddingApiKey;
@@ -129,7 +140,20 @@ export function mountAIForm(form) {
       : "密钥保存在服务器，读取时不会返回。";
   };
   function syncEmbedding() {
-    const enabled = $("#enable-embedding").checked;
+    const mode = $("#knowledge-mode").value;
+    const enabled = mode === "vector";
+    $("#knowledge-limit-options").hidden = mode === "off";
+    $("#knowledge-max-chars").disabled = busy || mode === "off";
+    $("#knowledge-vector-tools").hidden = !enabled;
+    $("#index-knowledge").disabled = busy || !enabled;
+    $("#reindex-all").disabled = busy || !enabled;
+    $("#knowledge-mode-help").textContent =
+      mode === "full"
+        ? "全文模式无需生成向量。回复时会把最新的项目资料发给对话模型参考，受上方字符上限约束。AI 回复开关仍在「智能回复」。"
+        : mode === "vector"
+          ? "向量模式会检索最相关的 3 条资料。请保存并测试向量接口后生成索引；正文会发给向量服务商并产生 API 用量。"
+          : "当前不使用知识库；同步和保存的文档仍会保留。";
+    if (loaded) renderKnowledgeStatus();
     $("#embedding-options").hidden = !enabled;
     $("#embedding-model").required = enabled;
     $("#embedding-options")
@@ -217,9 +241,9 @@ export function mountAIForm(form) {
   const values = () => ({
     ...connectionValues(),
     model: $("#chat-model").value.trim(),
-    embeddingModel: $("#enable-embedding").checked
-      ? $("#embedding-model").value
-      : "",
+    knowledgeMode: $("#knowledge-mode").value,
+    knowledgeMaxChars: Number($("#knowledge-max-chars").value),
+    embeddingModel: $("#embedding-model").value,
   });
   setBusy(true);
   request("/api/v1/settings/ai")
@@ -228,9 +252,9 @@ export function mountAIForm(form) {
       $("#embedding-base-url").value = data.embeddingBaseUrl || "";
       optionsFor($("#chat-model"), [], data.configured ? data.model : "");
       optionsFor($("#embedding-model"), [], data.embeddingModel);
-      $("#enable-embedding").checked =
-        Boolean(data.embeddingModel) &&
-        (data.configured || data.source === "database");
+      $("#knowledge-mode").value =
+        data.knowledgeMode || (data.embeddingModel ? "vector" : "full");
+      $("#knowledge-max-chars").value = data.knowledgeMaxChars || 16000;
       applyState(data);
       loaded = true;
       setBusy(false);
@@ -264,7 +288,7 @@ export function mountAIForm(form) {
       }
     }
   });
-  $("#enable-embedding").addEventListener("change", syncEmbedding);
+  $("#knowledge-mode").addEventListener("change", syncEmbedding);
   $("#refresh-models").addEventListener("click", () => {
     void readModels();
   });
@@ -291,6 +315,8 @@ export function mountAIForm(form) {
         reveal.setAttribute("aria-pressed", "false");
       }
       $("#base-url").value = result.data.baseUrl;
+      $("#knowledge-mode").value = result.data.knowledgeMode;
+      $("#knowledge-max-chars").value = result.data.knowledgeMaxChars;
       applyState(result.data);
       setDirty(false);
       message(
@@ -332,9 +358,8 @@ export function mountAIForm(form) {
         `/api/v1/knowledge?project_id=${encodeURIComponent(projectId)}`,
       );
       entries = result.data;
-      const indexed = entries.filter((entry) => entry.indexed).length;
-      $("#knowledge-status").textContent =
-        `共 ${entries.length} 条，已生成向量 ${indexed} 条，待生成 ${entries.length - indexed} 条。`;
+      knowledgeEntries = entries;
+      renderKnowledgeStatus();
     }
     $("#refresh-knowledge").addEventListener("click", () => {
       void refreshKnowledge().catch((error) => {
@@ -428,6 +453,11 @@ export function mountAIForm(form) {
     });
     $("#sync-source").addEventListener("click", async () => {
       if (busy) return;
+      if (dirtyForms.has(form)) {
+        $("#source-status").textContent =
+          "请先保存 AI 配置，再同步文档，以便使用所选知识库模式。";
+        return;
+      }
       setBusy(true);
       try {
         await request(

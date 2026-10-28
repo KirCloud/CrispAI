@@ -12,6 +12,7 @@ import * as payload from "@/api/payload.controller";
 import * as transfer from "@/api/transfer.controller";
 import { createAISettingsRoutes } from "@/api/ai-settings.controller";
 import { createKnowledgeSourceRoutes } from "@/api/knowledge-source.controller";
+import { getKnowledgeMode } from "@/services/ai-config.service";
 import { knowledgeSync } from "@/services/knowledge-runtime.service";
 import { createKnowledgeRoutes } from "@/api/knowledge.controller";
 import * as db from "@/services/db.service";
@@ -56,7 +57,9 @@ api.route(
     list: db.listKnowledgeStatus,
     get: db.getPayloadById,
     embed: createEmbedding,
-    ready: () => Boolean(aiConfig.current().embeddingModel),
+    ready: () =>
+      getKnowledgeMode(aiConfig.current()) === "vector" &&
+      Boolean(aiConfig.current().embeddingModel),
     update: db.updatePayloadVector,
   }),
 );

@@ -39,11 +39,12 @@ test("document normalization removes restricted credentials and dynamic subscrip
     ).every((entry) => entry.raw.length < 2200),
   ).toBe(true);
 });
-function fixture() {
+function fixture(mode: "full" | "vector" = "vector") {
   let saved = structuredClone(config),
     fail = false,
     fetches = 0,
-    applies = 0;
+    applies = 0,
+    embeds = 0;
   let entries: SourceEntry[] = convertDocument(
     { id: 1, title: "Tutorial", body: "First version" },
     config.docsUrl,
@@ -83,8 +84,12 @@ function fixture() {
       }
     },
     pending: async () => [...rows.values()].filter((row) => !row.vector),
+    mode: () => mode,
     canEmbed: () => true,
-    embed: async () => Array(1536).fill(0.1),
+    embed: async () => {
+      embeds++;
+      return Array(1536).fill(0.1);
+    },
     update: async (entry, vector) => {
       rows.get(entry.id)!.vector = vector;
       return true;
@@ -92,7 +97,7 @@ function fixture() {
   });
   return {
     sync,
-    state: () => ({ saved, fetches, applies }),
+    state: () => ({ saved, fetches, applies, embeds }),
     fail: () => {
       fail = true;
     },
@@ -159,4 +164,15 @@ test("source fetch reads the directory and each article using Authorization with
   } finally {
     server.stop(true);
   }
+});
+
+test("full-mode source updates are ready immediately and never call embeddings even if a vector provider remains configured", async () => {
+  const f = fixture("full");
+  expect((await f.sync.run("project"))!.lastMessage).toContain(
+    "全文模式可直接使用",
+  );
+  f.change();
+  expect((await f.sync.run("project"))!.lastMessage).toContain("无需生成向量");
+  expect(f.state().applies).toBe(2);
+  expect(f.state().embeds).toBe(0);
 });

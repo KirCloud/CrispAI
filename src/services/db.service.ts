@@ -256,6 +256,25 @@ export const listPayloads = async (projectId: string): Promise<any[]> => {
     select id, project, name, raw, created_at from payload
     where project = ${projectId} and source_active order by created_at desc`;
 };
+export const listKnowledgeText = async (project: string, maxChars: number) => {
+  const rows = await sql`
+    with documents as (
+      select id, left(name, 200) as name, raw, created_at,
+        count(*) over () as total,
+        coalesce(sum(least(char_length(raw), ${maxChars}) + least(char_length(name), 200) + 32)
+          over (order by created_at, id rows between unbounded preceding and 1 preceding), 0) as preceding_chars
+      from payload where project = ${project} and source_active
+    )
+    select name, left(raw, ${maxChars}) as raw, total from documents
+    where preceding_chars < ${maxChars} order by created_at, id`;
+  return {
+    documents: rows.map((row: { name: string; raw: string }) => ({
+      name: row.name,
+      raw: row.raw,
+    })),
+    total: Number(rows[0]?.total ?? 0),
+  };
+};
 export const listKnowledgeStatus = async (project: string) => {
   return await sql`select id, name, vector is not null as indexed from payload
     where project = ${project} and source_active order by created_at asc`;
@@ -305,12 +324,12 @@ export const updatePayload = async (
   project: string,
   name: string,
   raw: string,
-  embedding: number[],
+  embedding: number[] | null,
 ) => {
   await sql`
     update payload
     set name = ${name}, raw = ${raw},
-        vector = ${toVector(embedding)}::extensions.vector, created_at = now()
+        vector = ${embedding === null ? null : toVector(embedding)}::extensions.vector, created_at = now()
     where id = ${id} and project = ${project}`;
 };
 export const deletePayload = async (id: string) => {

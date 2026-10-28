@@ -5,6 +5,8 @@ import {
   AIConfigManager,
   aiConfigSchema,
   hasAIKey,
+  getKnowledgeMode,
+  validateKnowledgeConfig,
   resolveEmbeddingConnection,
   type AIConfig,
 } from "@/services/ai-config.service";
@@ -95,10 +97,12 @@ export function createAISettingsRoutes(manager: AIConfigManager) {
     if (!result.success)
       return c.json({ message: "请检查 API 地址、密钥和模型名称" }, 400);
     try {
-      if (result.data.embeddingModel)
-        resolveEmbeddingConnection(manager.resolve(result.data));
+      validateKnowledgeConfig(manager.resolve(result.data));
     } catch {
-      return c.json({ message: "请填写向量接口的独立 API 密钥" }, 400);
+      return c.json(
+        { message: "向量模式需要选择向量模型，并配置可用的向量接口密钥" },
+        400,
+      );
     }
     try {
       return c.json({
@@ -119,6 +123,11 @@ export function createAISettingsRoutes(manager: AIConfigManager) {
     const config = manager.resolve(result.data);
     if (!hasAIKey(config.apiKey))
       return c.json({ message: "请先填写 API 密钥" }, 400);
+    if (result.data.testEmbedding && getKnowledgeMode(config) !== "vector")
+      return c.json(
+        { message: "全文模式无需向量接口；测试向量模型前请切换到向量模式" },
+        400,
+      );
     if (result.data.testEmbedding && !config.embeddingModel)
       return c.json({ message: "请先启用并选择知识库向量模型" }, 400);
     if (result.data.testEmbedding) {
