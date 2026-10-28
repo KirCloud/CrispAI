@@ -131,6 +131,8 @@ try {
   assert.equal((await db.listPendingSourcePayloads(project)).length, 1);
   await db.syncSourcePayloads(project, []);
   assert.equal((await db.listKnowledgeStatus(project)).length, 0);
+  assert.equal((await db.listPayloads(project)).length, 0);
+  assert.equal((await db.listPayloadsWithVector(project)).length, 0);
   assert.equal(
     (await sql`select id from payload where project = ${project}`).length,
     1,

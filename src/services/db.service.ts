@@ -254,7 +254,7 @@ export const hasPayload = async (projectId: string) => {
 export const listPayloads = async (projectId: string): Promise<any[]> => {
   return await sql`
     select id, project, name, raw, created_at from payload
-    where project = ${projectId} order by created_at desc`;
+    where project = ${projectId} and source_active order by created_at desc`;
 };
 export const listKnowledgeStatus = async (project: string) => {
   return await sql`select id, name, vector is not null as indexed from payload
@@ -276,7 +276,7 @@ export const listPayloadsWithVector = async (
 ): Promise<any[]> => {
   return await sql`
     select id, name, raw, vector::text as vector, created_at from payload
-    where project = ${projectId} order by created_at asc`;
+    where project = ${projectId} and source_active order by created_at asc`;
 };
 export const getPayloadById = async (id: string) => {
   const [row] = await sql`
@@ -378,10 +378,14 @@ export const syncSourcePayloads = async (
             then payload.vector else null end
         where payload.source_hash is distinct from excluded.source_hash or payload.raw is distinct from excluded.raw or payload.name is distinct from excluded.name or not payload.source_active`;
     }
-    const keys = entries.map((entry) => entry.key);
-    await tx`update payload set source_active = false, vector = null
-      where project = ${project} and source_key like 'v2board:%'
-        and not (source_key = any(${keys}::text[]))`;
+    const keys = new Set(entries.map((entry) => entry.key));
+    const existing = await tx`select id, source_key from payload
+      where project = ${project} and source_key like 'v2board:%' and source_active`;
+    for (const row of existing) {
+      if (!keys.has(row.source_key))
+        await tx`update payload set source_active = false, vector = null
+          where id = ${row.id} and project = ${project}`;
+    }
   });
 };
 export const listPendingSourcePayloads = async (project: string) =>
