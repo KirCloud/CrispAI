@@ -1,4 +1,5 @@
 import { getAIProvider } from "@/services/openai.service";
+import { AI_REPLY_FORMAT_GUIDE, normalizeCrispReply } from "@/utils/message-format";
 import type { AIConfig } from "@/services/ai-config.service";
 import { getKnowledgeContext } from "@/services/knowledge-runtime.service";
 import { withKnowledgeContext } from "@/services/knowledge-context.service";
@@ -300,17 +301,18 @@ async function handleAIReply(session: Session, body: any, project: any) {
   const reply = completion.choices[0]?.message;
   if (!reply?.content) return;
 
-  session.thread.push(reply);
+  const content = normalizeCrispReply(reply.content);
+  session.thread.push({ ...reply, content });
 
   await crisp.sendMessage(
     body.website_id,
     body.session_id,
-    reply.content,
+    content,
     project.botName,
     project.botIcon,
   );
 
-  return reply.content;
+  return content;
 }
 
 async function buildMessages(
@@ -329,6 +331,7 @@ async function buildMessages(
     messages.push({ role: "system", content: project.payload || "" });
   }
 
+  messages.push({ role: "system", content: AI_REPLY_FORMAT_GUIDE });
   messages.push({
     role: "system",
     content: JSON.stringify(
@@ -381,9 +384,8 @@ async function handleImageMessage(
   if (!completion?.choices) return;
 
   const reply = completion.choices[0]?.message;
-  session.thread.push(reply);
-
-  const replyText = reply?.content ?? "无法识别该图片";
+  const replyText = normalizeCrispReply(reply?.content ?? "无法识别该图片");
+  if (reply) session.thread.push({ ...reply, content: replyText });
   await crisp.sendMessage(
     body.website_id,
     body.session_id,

@@ -142,35 +142,7 @@ export const generateTelegramSession = async (
     throw error;
   }
 };
-export const emojiConverter = (text: string) => {
-  const emojiMap: Record<string, string> = {
-    ":)": "🙂",
-    ":D": "😀",
-    ":$": "☺️",
-    "x)": "😅",
-    "8)": "😎",
-    ":'(": "😭",
-    ":/": "😒",
-    "<3": "❤️",
-    ":'D": "😀",
-    ":(": "🙁",
-    ":@": "😠",
-    ":S": "😖",
-    "[+1]": "👍",
-    ":o": "😲",
-    ":P": "😋",
-    ";)": "😉",
-  };
-
-  let result = text;
-  for (const [emoticon, emoji] of Object.entries(emojiMap)) {
-    // 使用全局替换，转义特殊字符
-    const escapedEmoticon = emoticon.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    result = result.replace(new RegExp(escapedEmoticon, "g"), emoji);
-  }
-
-  return result;
-};
+export { convertStandaloneSmileys as emojiConverter } from "@/utils/message-format";
 
 export const createResponse = (status: boolean, message: string) => {
   return {

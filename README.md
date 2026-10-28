@@ -130,6 +130,25 @@ Webhook 由服务启动时自动注册到 `PUBLIC_URL/telegram`，并带 secret 
 <script type="text/javascript" src="https://你的域名/intro.js"></script>
 ```
 
+### 网页客服的 emoji 与链接排版
+
+AI 回复会补齐中文旁边的 Markdown 间距，并将裸网址转换为明确的链接；
+代码块、已有链接的地址和图片内容保持原样。排版提示会要求模型使用简短的链接名称，
+并把 emoji 放在说明文字旁边，避免独立表情被聊天窗口放大。
+Telegram 转发只转换独立的文字表情，不会再将 `https://` 中的 `:/` 误改成 emoji。
+
+如果宿主网站使用 Twemoji 处理全页文字，还需在**嵌入客服的网站**加载
+[`integrations/crisp-widget.css`](integrations/crisp-widget.css)：
+将它复制到网站静态资源目录，再添加相应的样式链接，例如：
+
+```html
+<link rel="stylesheet" href="/custom/crisp-widget.css">
+```
+
+该样式仅限制 `twemoji-emoji` 图片的大小，并允许客服链接在气泡内换行；
+普通截图和头像不受尺寸规则影响。仅更新 CrispAI 容器不会自动修改独立的网站前端。
+样式可影响已有消息的显示；回复内容的格式整理只对更新后的新 AI 回复生效。
+
 ## 日常操作
 
 ```bash
