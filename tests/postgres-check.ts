@@ -1,6 +1,5 @@
 // Run only against a disposable database whose name ends in _test.
 import assert from "node:assert/strict";
-import { SQL } from "bun";
 import * as db from "../src/services/db.service";
 import { Hono } from "hono";
 import {
@@ -99,7 +98,7 @@ assert.equal(
     .status,
   401,
 );
-const sql = new SQL(Bun.env.DATABASE_URL!);
+const sql = db.default;
 const project = crypto.randomUUID();
 await sql`insert into project (id, name) values (${project}, 'Disposable integration test')`;
 try {

@@ -14,6 +14,7 @@ import logger from "@/services/logger.service";
  */
 const sql = new SQL(
   Bun.env.DATABASE_URL ?? "postgres://postgres:postgres@127.0.0.1:5432/crispai",
+  { max: Bun.env.NODE_ENV === "test" ? 2 : 10 },
 );
 
 /**
