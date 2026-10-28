@@ -10,6 +10,8 @@ import * as project from "@/api/project.controller";
 import * as option from "@/api/option.controller";
 import * as payload from "@/api/payload.controller";
 import * as transfer from "@/api/transfer.controller";
+import { createAISettingsRoutes } from "@/api/ai-settings.controller";
+import { aiConfig } from "@/services/openai.service";
 
 /**
  * 管理后台接口（/api/v1）
@@ -39,6 +41,7 @@ api.post(
 );
 
 api.use("*", authMiddleware);
+api.route("/settings/ai", createAISettingsRoutes(aiConfig));
 
 // project
 api.get("/projects", project.listController);

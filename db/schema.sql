@@ -18,6 +18,13 @@
 create schema if not exists extensions;
 create extension if not exists vector with schema extensions;   -- payload.vector 向量检索
 
+-- Global administrator settings. This table is never included in project exports.
+create table if not exists public.app_setting (
+  key text primary key,
+  value jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
 -- ---------------------------------------------------------------------------
 -- 1. project — 客服项目（一个 Crisp 站点对应一个项目）
 --    hosted / joined / invited / plan_id / expired_at / renewal 是 SaaS 版的多用户与计费字段，

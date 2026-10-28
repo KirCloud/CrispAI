@@ -3,6 +3,7 @@ import hono, { authMiddleware, mountWeb } from "@/services/hono.service";
 import { migrate } from "@/services/db.service";
 import { setupWebhook } from "@/services/telegram.service";
 import { loadWorkers, serverAdapter, setupWorkerShutdown } from "@/workers";
+import { aiConfig } from "@/services/openai.service";
 
 // 进程级兜底：只记录日志，不退出进程。
 // 之前这里会 process.exit(1)，任何一处没接住的 Promise 拒绝（网络抖动、Redis/Postgres 短暂不可用）
@@ -24,11 +25,16 @@ try {
 }
 
 // 自动加载所有 Workers
+try {
+  await aiConfig.initialize();
+} catch {
+  logger.error("AI 配置加载失败，AI 请求已暂停；请检查数据库连接后重启应用");
+}
 const { workers, queues } = await loadWorkers();
 setupWorkerShutdown(workers, queues);
 const basePath = "/jobs";
 serverAdapter.setBasePath(basePath);
-// Bull Board 能看到所有会话内容，必须放在 Basic 认证后面
+// Bull Board 能看到所有会话内容，必须放在管理员认证后面
 hono.use("/jobs/*", authMiddleware);
 hono.use("/jobs", authMiddleware);
 hono.get("/jobs/", (c) => {
@@ -44,7 +50,7 @@ try {
   const port = Bun.env.PORT ? parseInt(Bun.env.PORT) : 3000;
   Bun.serve({
     port,
-    fetch: hono.fetch,
+    fetch: (request, server) => hono.fetch(request, { remoteAddress: server.requestIP(request)?.address }),
   });
   logger.info(`HTTP 服务已启动，端口: ${port}`);
   logger.info(`环境: ${Bun.env.NODE_ENV || "development"}`);

@@ -2,6 +2,7 @@ import path from "path";
 import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { HTTPException } from "hono/http-exception";
+import { bodyLimit } from "hono/body-limit";
 import { webhookCallback as telegramWebhook } from "grammy";
 
 import { loggerMiddleware } from "@/middlewares/logger.middleware";
@@ -12,6 +13,7 @@ import { crispWebhook } from "@/services/crisp.service";
 import * as storage from "@/services/storage.service";
 import logger from "@/services/logger.service";
 import api from "@/api";
+import { createConsoleRoutes } from "@/services/console.service";
 
 // 管理页面的静态文件。前端源码不在这个仓库里，打包后的产物同步到 public/ 并随仓库提交
 const WEB_DIR = Bun.env.WEB_DIR
@@ -20,6 +22,8 @@ const WEB_DIR = Bun.env.WEB_DIR
 
 const hono = new Hono();
 hono.use("*", loggerMiddleware);
+hono.use("/api/auth/*", bodyLimit({ maxSize: 16 * 1024 }));
+hono.use("/api/v1/settings/*", bodyLimit({ maxSize: 32 * 1024 }));
 
 hono.onError((error, c) => {
   // basicAuth 等中间件用 HTTPException 表达 401，要原样返回（带 WWW-Authenticate 头浏览器才会弹登录框）
@@ -52,6 +56,7 @@ hono.get(`${storage.UPLOAD_ROUTE}/:name`, async (c) => {
 hono.get("/intro.js", serveStatic({ root: WEB_DIR }));
 
 // /api/v1 里除 intro 外都需要认证，见 api/index.ts
+hono.route("/", createConsoleRoutes());
 hono.route("/api/v1", api);
 
 /**

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>登录 · KirCloud</title>
+    <link rel="stylesheet" href="/console-assets/console.css" />
+    <script type="module" src="/console-assets/console.js"></script>
+  </head>
+  <body data-page="login">
+    <main class="login-layout">
+      <section class="login-story" aria-label="KirCloud 客服控制台">
+        <a class="brand brand-light" href="/login"
+          ><span class="brand-mark">K<span></span></span
+          ><span>KirCloud<small>SUPPORT CONSOLE</small></span></a
+        >
+        <div class="story-content">
+          <span class="eyebrow">让每一次对话，都有回应</span>
+          <h1>连接客户，<br />也连接你的团队。</h1>
+          <p>
+            将 Crisp 会话、Telegram 协作与 AI 助手<br
+              class="desktop-only"
+            />汇集在一个工作台。
+          </p>
+          <div class="conversation-art" aria-hidden="true">
+            <div class="orbit orbit-one"></div>
+            <div class="orbit orbit-two"></div>
+            <div class="art-bubble">
+              <span class="art-avatar">K</span>
+              <div>
+                <span class="art-line wide"></span
+                ><span class="art-line"></span>
+              </div>
+              <span class="art-dot"></span>
+            </div>
+            <div class="art-reply">
+              <span class="sparkle">✧</span>
+              <div>
+                <span class="art-line wide"></span
+                ><span class="art-line short"></span>
+              </div>
+              <span class="art-check">✓</span>
+            </div>
+            <span class="art-label">Crisp ↔ Telegram</span>
+          </div>
+        </div>
+        <p class="story-footer">基于 CrispAI · KirCloud 自部署控制台</p>
+      </section>
+      <section class="login-panel">
+        <div class="login-card">
+          <span class="pill">管理员入口</span>
+          <h2>欢迎回来</h2>
+          <p class="muted">登录后继续管理你的客服项目。</p>
+          <form id="login-form">
+            <label for="username">账号</label
+            ><input
+              id="username"
+              name="username"
+              autocomplete="username"
+              required
+              maxlength="256"
+              placeholder="输入管理员账号"
+              autofocus
+            />
+            <div class="label-row">
+              <label for="password">密码</label
+              ><span class="field-note">使用现有管理员密码</span>
+            </div>
+            <div class="password-field">
+              <input
+                id="password"
+                name="password"
+                type="password"
+                autocomplete="current-password"
+                required
+                maxlength="8192"
+                placeholder="输入登录密码"
+              /><button
+                class="reveal"
+                type="button"
+                data-reveal="password"
+                aria-label="显示密码"
+                aria-pressed="false"
+              >
+                显示
+              </button>
+            </div>
+            <p
+              id="form-message"
+              class="form-message"
+              role="status"
+              aria-live="polite"
+            ></p>
+            <button class="button primary full" type="submit" id="login-submit">
+              登录控制台 <span aria-hidden="true">→</span>
+            </button>
+          </form>
+          <div class="login-footnote">
+            <span aria-hidden="true">◈</span> 安全会话 · 密码不会存储在浏览器中
+          </div>
+        </div>
+        <p class="panel-footer">
+          KirCloud Console <span>为更好的客服体验而构建</span>
+        </p>
+      </section>
+    </main>
+  </body>
+</html>

@@ -62,6 +62,16 @@ const clean = (patch: Record<string, unknown>) =>
     Object.entries(patch).filter(([, value]) => value !== undefined),
   );
 
+export const getAppSetting = async (key: string) => {
+  const [row] = await sql`select value from app_setting where key = ${key}`;
+  return row?.value ?? null;
+};
+
+export const saveAppSetting = async (key: string, value: Record<string, unknown>) => {
+  await sql`insert into app_setting ${sql({ key, value })}
+    on conflict (key) do update set value = excluded.value, updated_at = now()`;
+};
+
 // ---------------------------------------------------------------------------
 // project
 // ---------------------------------------------------------------------------

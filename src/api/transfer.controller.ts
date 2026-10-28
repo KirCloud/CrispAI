@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import z from "zod";
 import * as db from "@/services/db.service";
-import { createEmbedding, EMBEDDING_MODEL } from "@/services/openai.service";
+import { createEmbedding, aiConfig } from "@/services/openai.service";
 import logger from "@/services/logger.service";
 import { validate } from "@/api/validator";
 
@@ -51,7 +51,7 @@ export const exportController = async (c: Context) => {
     format: FORMAT,
     version: VERSION,
     exported_at: new Date().toISOString(),
-    embedding_model: EMBEDDING_MODEL,
+    embedding_model: aiConfig.current().embeddingModel,
     project: Object.fromEntries(PROJECT_FIELDS.map((k) => [k, project[k]])),
     options: options.map((o: any) => ({
       id: o.id,
@@ -186,7 +186,7 @@ export const importController = async (c: Context) => {
   }));
 
   // 向量模型一致就直接用导出的向量，否则重新生成（网络请求放在事务外面）
-  const sameModel = body.embedding_model === EMBEDDING_MODEL;
+  const sameModel = body.embedding_model === aiConfig.current().embeddingModel;
   const payloads: { name: string; raw: string; vector: string | null }[] = [];
   let failed = 0;
   for (const payload of body.payloads) {

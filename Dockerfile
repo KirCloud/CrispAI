@@ -9,6 +9,7 @@ COPY tsconfig.json index.ts ./
 COPY src ./src
 COPY db ./db
 COPY public ./public
+COPY web ./web
 
 ENV NODE_ENV=production \
     PORT=3000 \

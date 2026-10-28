@@ -1,4 +1,4 @@
-import openai, { CHAT_MODEL, createEmbedding } from "@/services/openai.service";
+import { getAIProvider, createEmbedding } from "@/services/openai.service";
 import * as db from "@/services/db.service";
 import * as telegram from "@/services/telegram.service";
 import * as crisp from "@/services/crisp.service";
@@ -315,9 +315,10 @@ async function handleAIReply(session: Session, body: any, project: any) {
       messages.splice(lastIndex, 0, docs);
     }
   }
-  const completion = await openai.chat.completions.create({
+  const { client, model } = getAIProvider();
+  const completion = await client.chat.completions.create({
     messages,
-    model: CHAT_MODEL,
+    model,
   });
 
   const reply = completion.choices[0]?.message;
@@ -386,9 +387,10 @@ async function handleImageMessage(
     content: [{ type: "image_url", image_url: { url: body.content.url } }],
   });
 
-  const completion = await openai.chat.completions.create({
+  const { client, model } = getAIProvider();
+  const completion = await client.chat.completions.create({
     messages,
-    model: CHAT_MODEL,
+    model,
   });
 
   if (!completion?.choices) return;

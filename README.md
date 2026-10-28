@@ -1,4 +1,8 @@
-# CrispAI
+# KirCloud Console · CrispAI
+
+基于 [Haruka-Network/CrispAI](https://github.com/Haruka-Network/CrispAI) 的自部署扩展。
+新增独立的管理员登录页、项目概览和全局 AI 配置页；原 `public/` 项目编辑页面原样保留。
+新增页面源码位于 `web/`，不依赖额外前端构建工具。
 
 Crisp 智能客服助手的自部署版：关键词自动回复、AI 回复（带知识库检索）、选项卡片、欢迎语，
 以及把每个 Crisp 会话同步到 Telegram 话题群，客服直接在 Telegram 里回复。
@@ -22,6 +26,43 @@ docker compose up -d
 
 然后用反向代理（Caddy / Nginx / Traefik 等）把域名指到 `127.0.0.1:3000`，打开
 `https://你的域名/`，用 `ADMIN_USER` / `ADMIN_PASSWORD` 登录。数据库表在首次启动时自动创建。
+
+### 登录与 AI 配置
+
+1. 打开 `/login`，使用 `.env` 中已有的管理员账号密码登录。
+2. 在项目概览左侧进入 **AI 配置**（`/settings/ai`）。
+3. 填写 OpenAI 兼容 API 的 Base URL、API 密钥、对话模型和向量模型。
+4. 点击「测试连接」验证当前表单；可同时检查向量输出是否为 1536 维。
+5. 点击「保存配置」。配置写入 PostgreSQL，新请求即时生效，无需重启容器。
+6. 进入具体项目的「智能回复」，开启 AI 回复并保存。全局接口配置不会自动开启任何项目的 AI。
+
+密钥只保存在服务器，读取接口不会返回它。密钥输入框留空会保留现有值；
+测试连接使用当前表单，但不会保存，且会向所选服务商发送简短测试请求，可能产生少量费用。
+知识库需要同一接口支持 Embeddings 并输出 1536 维向量；更换向量模型后请重新保存知识库条目。
+不使用知识库时，普通文字回复不依赖向量模型。
+
+首次使用从 `.env` 读取 AI 默认值；在后台保存后，数据库配置优先于 `OPENAI_*` 环境变量。
+项目导入导出不包含 API 密钥和全局接口配置，请备份完整数据库以保留这些配置。
+
+网页登录使用 HttpOnly、SameSite=Strict 的会话 Cookie，HTTPS 部署时启用 Secure。
+会话有效期为 12 小时；退出、重启应用或修改 `.env` 中的管理员凭据会使会话失效。
+命令行仍可用显式 Basic 认证调用受保护接口；浏览器不会再弹出原生认证窗口。
+未配置 `ADMIN_PASSWORD` 时，管理接口保持关闭。
+
+使用反向代理时，`PUBLIC_URL` 必须与浏览器访问的地址一致，用于同源校验。
+只有在代理覆盖 `X-Real-IP` 且应用端口仅对该代理开放时，才设置 `TRUST_PROXY=true`，
+否则登录限流按连接来源统计。不要将应用端口直接暴露到公网。
+
+### 开发与验证
+
+```sh
+bun install --frozen-lockfile
+bun run typecheck
+bun test
+```
+
+新增页面是可编辑的 HTML、CSS 与 JavaScript（`web/`）；后端继续使用 Bun + Hono。
+认证、配置保存、配置重载、连接测试和页面路由均有自动化测试。
 
 ### 准备 Crisp 插件
 
@@ -78,8 +119,9 @@ docker compose exec postgres pg_dump -U crispai crispai > backup.sql
 
 ## 许可证
 
-后端源码（本仓库中除 `public/` 以外的全部内容）以 [GNU AGPL-3.0](LICENSE) 授权，
+后端及新增 `web/` 页面源码（本仓库中除 `public/` 以外的全部内容）以 [GNU AGPL-3.0](LICENSE) 授权，
 Copyright (C) 2026 DyAxy。
+KirCloud 扩展部分 Copyright (C) 2026 KirCloud，同样以 AGPL-3.0 授权。
 
 简单说：你可以自由使用、修改和部署，包括商用。但如果你修改了代码并把它作为网络服务提供给别人使用，
 就必须以同样的许可证向这些用户公开你修改后的完整源码。只是自己部署自己用，没有任何额外义务。
