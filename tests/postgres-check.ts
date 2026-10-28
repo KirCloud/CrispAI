@@ -116,6 +116,11 @@ try {
   assert.equal(await db.updatePayloadVector(entry, vector), true);
   await db.syncSourcePayloads(project, [first]);
   assert.equal((await db.listPendingSourcePayloads(project)).length, 0);
+  await sql`update payload set raw = 'Manual draft' where id = ${entry.id}`;
+  await db.syncSourcePayloads(project, [first]);
+  const restored = (await db.listPendingSourcePayloads(project))[0]!;
+  assert.equal(restored.raw, "First version");
+  assert.equal(await db.updatePayloadVector(restored, vector), true);
   assert.equal(
     (await db.matchPayloads(project, vector, 3))[0].raw,
     "First version",

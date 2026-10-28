@@ -373,9 +373,9 @@ export const syncSourcePayloads = async (
         on conflict (project, source_key) do update set
           name = excluded.name, raw = excluded.raw, source_hash = excluded.source_hash,
           source_active = true,
-          vector = case when payload.source_hash = excluded.source_hash and payload.source_active
+          vector = case when payload.source_hash = excluded.source_hash and payload.raw = excluded.raw and payload.source_active
             then payload.vector else null end
-        where payload.source_hash is distinct from excluded.source_hash or not payload.source_active`;
+        where payload.source_hash is distinct from excluded.source_hash or payload.raw is distinct from excluded.raw or payload.name is distinct from excluded.name or not payload.source_active`;
     }
     const keys = entries.map((entry) => entry.key);
     await tx`update payload set source_active = false, vector = null
