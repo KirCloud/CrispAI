@@ -2,224 +2,45 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>AI 配置 · KirCloud</title>
-    <link rel="stylesheet" href="/console-assets/console.css" />
-    <script type="module" src="/console-assets/console.js"></script>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>AI 配置 · CrispAI</title>
+    <link rel="stylesheet" href="/console-assets/console.css?v=2" />
+    <script type="module" src="/console-assets/console.js?v=2"></script>
   </head>
-  <body data-page="ai">
-    <div class="console-layout">
-      <aside class="sidebar">
-        <a class="brand" href="/dashboard"
-          ><span class="brand-mark">K<span></span></span
-          ><span>KirCloud<small>客服控制台</small></span></a
+  <body class="kc-console" data-page="ai">
+    <header class="kc-navbar">
+      <div class="kc-navbar-inner">
+        <a class="kc-brand" href="/dashboard"
+          ><img src="/console-logo.png" alt="" width="32" height="32" /><strong
+            >CrispAI</strong
+          ><span class="kc-beta">Beta</span></a
         >
-        <p class="nav-caption">工作空间</p>
-        <nav aria-label="主导航">
-          <a class="nav-link" href="/dashboard"
-            ><span aria-hidden="true">▦</span>项目概览</a
-          ><a class="nav-link active" href="/settings/ai" aria-current="page"
-            ><span aria-hidden="true">✧</span>AI 配置</a
-          >
+        <nav class="kc-breadcrumb" aria-label="面包屑">
+          <a href="/dashboard">仪表盘</a><span>›</span><span>AI 配置</span>
         </nav>
-        <div class="sidebar-bottom">
-          <div class="deployment-label">
-            <span class="status-dot"></span>自部署实例
-          </div>
-          <a
-            href="https://github.com/KirCloud/CrispAI"
-            target="_blank"
-            rel="noopener noreferrer"
-            >源代码 <span aria-hidden="true">↗</span></a
+        <div class="kc-header-actions">
+          <button
+            type="button"
+            class="kc-header-button"
+            data-theme
+            aria-label="切换明暗主题"
           >
+            ◐</button
+          ><button type="button" class="kc-header-button" data-logout>
+            退出登录
+          </button>
         </div>
-      </aside>
-      <div class="main-column">
-        <header class="topbar">
-          <div class="breadcrumb">
-            工作空间 <span>/</span> <strong>AI 配置</strong>
-          </div>
-          <div class="account">
-            <span class="avatar">K</span><span id="account-name">管理员</span
-            ><button class="text-button" data-logout>退出登录</button>
-          </div>
-        </header>
-        <main class="content">
-          <div class="page-heading">
-            <div>
-              <span class="eyebrow">AI SETTINGS</span>
-              <h1>连接你的 AI 能力</h1>
-              <p class="muted">配置接口与模型，为所有客服项目提供 AI 服务。</p>
-            </div>
-            <span class="status-badge" id="config-status">正在加载</span>
-          </div>
-          <form id="ai-form">
-            <div class="settings-grid">
-              <div class="settings-main">
-                <section class="settings-card">
-                  <div class="card-heading">
-                    <span class="section-icon" aria-hidden="true">⌁</span>
-                    <div>
-                      <h2>接口连接</h2>
-                      <p>使用 OpenAI 兼容接口，连接你选择的服务商。</p>
-                    </div>
-                    <span class="step-label">01</span>
-                  </div>
-                  <div class="card-body">
-                    <label for="base-url"
-                      >API 地址 <span class="required">*</span></label
-                    ><input
-                      id="base-url"
-                      type="url"
-                      maxlength="2048"
-                      placeholder="https://api.example.com/v1"
-                      required
-                    />
-                    <p class="input-help">
-                      填写服务商的 Base URL，通常以 /v1 结尾。
-                    </p>
-                    <div class="label-row">
-                      <label for="api-key">API 密钥</label
-                      ><span class="key-status" id="key-status">尚未设置</span>
-                    </div>
-                    <div class="password-field">
-                      <input
-                        id="api-key"
-                        type="password"
-                        autocomplete="off"
-                        maxlength="8192"
-                        spellcheck="false"
-                        placeholder="输入 API 密钥"
-                      /><button
-                        type="button"
-                        class="reveal"
-                        data-reveal="api-key"
-                        aria-label="显示密钥"
-                        aria-pressed="false"
-                      >
-                        显示
-                      </button>
-                    </div>
-                    <p class="input-help" id="key-help">
-                      密钥仅保存在服务器，不会通过读取接口返回。
-                    </p>
-                  </div>
-                </section>
-                <section class="settings-card">
-                  <div class="card-heading">
-                    <span class="section-icon" aria-hidden="true">✧</span>
-                    <div>
-                      <h2>模型选择</h2>
-                      <p>分别指定对话与知识库检索使用的模型。</p>
-                    </div>
-                    <span class="step-label">02</span>
-                  </div>
-                  <div class="card-body">
-                    <label for="chat-model"
-                      >对话模型 <span class="required">*</span></label
-                    ><input
-                      id="chat-model"
-                      maxlength="200"
-                      placeholder="填写服务商支持的模型名称"
-                      required
-                    />
-                    <p class="input-help">
-                      用于生成客服回复。启用识图时，需选择支持图片的模型。
-                    </p>
-                    <label for="embedding-model"
-                      >向量模型 <span class="required">*</span></label
-                    ><input
-                      id="embedding-model"
-                      maxlength="200"
-                      placeholder="text-embedding-3-small"
-                      required
-                    />
-                    <p class="input-help">
-                      用于知识库检索，输出必须为 1536
-                      维。更换后请重新保存知识库条目。
-                    </p>
-                  </div>
-                </section>
-                <section class="test-card">
-                  <div>
-                    <h3>先验证，再启用</h3>
-                    <p>
-                      测试当前表单中的参数，发送一条简短请求；可能产生少量服务商费用。
-                    </p>
-                    <label class="checkbox-label"
-                      ><input
-                        id="test-embedding"
-                        type="checkbox"
-                      />同时测试知识库向量模型</label
-                    >
-                  </div>
-                  <button
-                    type="button"
-                    class="button secondary"
-                    id="test-connection"
-                  >
-                    测试连接 <span aria-hidden="true">↗</span>
-                  </button>
-                </section>
-              </div>
-              <aside class="settings-aside">
-                <div class="info-card">
-                  <span class="info-symbol" aria-hidden="true">✧</span>
-                  <h3>配置一次，项目共享</h3>
-                  <p>
-                    接口参数对所有项目生效。保存后，新的 AI
-                    请求会立即使用这份配置，无需重启。
-                  </p>
-                  <div class="info-divider"></div>
-                  <div class="info-row">
-                    <span>配置来源</span><strong id="config-source">—</strong>
-                  </div>
-                  <div class="info-row">
-                    <span>密钥状态</span><strong id="summary-key">—</strong>
-                  </div>
-                </div>
-                <div class="steps-card">
-                  <h3>接入的最后一步</h3>
-                  <ol>
-                    <li>填写接口与模型，测试连接。</li>
-                    <li>保存这份全局配置。</li>
-                    <li>在项目「智能回复」里开启 AI 并保存。</li>
-                  </ol>
-                  <a href="/dashboard"
-                    >前往项目概览 <span aria-hidden="true">→</span></a
-                  >
-                </div>
-                <div class="subtle-note">
-                  更换服务商前，请确认它支持所选模型；如果原有自动回复服务仍在运行，先停用它以避免重复回复。
-                </div>
-              </aside>
-            </div>
-            <div class="save-bar">
-              <div>
-                <span class="save-indicator" id="save-indicator"></span
-                ><span id="save-state">正在读取配置…</span>
-              </div>
-              <button
-                type="submit"
-                class="button primary"
-                id="save-ai"
-                disabled
-              >
-                保存配置 <span aria-hidden="true">→</span>
-              </button>
-            </div>
-            <p
-              id="form-message"
-              class="form-message"
-              role="status"
-              aria-live="polite"
-            ></p>
-          </form>
-        </main>
-        <footer class="console-footer">
-          <span>KirCloud Console</span><span>基于 CrispAI</span>
-        </footer>
       </div>
-    </div>
+    </header>
+    <main class="kc-page"><!-- AI_PANEL --></main>
+    <footer class="kc-footer">
+      CrispAI ·
+      <a
+        href="https://github.com/KirCloud/CrispAI"
+        target="_blank"
+        rel="noopener noreferrer"
+        >KirCloud 扩展</a
+      >
+    </footer>
   </body>
 </html>

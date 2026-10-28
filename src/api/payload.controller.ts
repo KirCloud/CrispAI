@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import z from "zod";
 import * as db from "@/services/db.service";
-import { createEmbedding } from "@/services/openai.service";
+import { createEmbedding, aiConfig } from "@/services/openai.service";
 import logger from "@/services/logger.service";
 import { validate } from "@/api/validator";
 
@@ -29,17 +29,26 @@ export const saveController = async (c: Context) => {
 
   const project = await db.getProjectById(project_id);
   if (!project) return c.json({ message: "查询项目失败" }, 400);
+  if (!aiConfig.current().embeddingModel)
+    return c.json(
+      {
+        message:
+          "使用知识库前请先在 AI 配置中启用并选择向量模型；普通文字回复无需配置",
+      },
+      400,
+    );
 
   let embedding: number[] | undefined;
   try {
     embedding = await createEmbedding(params.raw);
-  } catch (error) {
-    logger.error("生成向量失败", {
-      message: error instanceof Error ? error.message : String(error),
-    });
+  } catch {
+    logger.error("生成知识库向量失败，请检查向量接口配置");
   }
   if (!embedding) {
-    return c.json({ message: "生成向量失败，请检查 OpenAI 配置" }, 502);
+    return c.json(
+      { message: "生成向量失败，请检查向量接口配置及 1536 维输出" },
+      502,
+    );
   }
 
   if (payload_id) {

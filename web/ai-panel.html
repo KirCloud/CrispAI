@@ -1,0 +1,273 @@
+<section class="kc-ai-settings" id="kc-ai-panel" aria-label="AI 配置">
+  <form id="ai-form" class="kc-card">
+    <div class="kc-card-heading">
+      <div>
+        <h2>AI 配置</h2>
+        <p class="kc-muted">
+          全局接口配置，对所有项目生效；回复开关和提示词仍在「智能回复」中设置。
+        </p>
+      </div>
+      <div class="kc-actions">
+        <button type="button" id="test-connection" class="kc-button">
+          测试连接</button
+        ><button
+          type="submit"
+          id="save-ai"
+          class="kc-button kc-primary"
+          disabled
+        >
+          保存配置
+        </button>
+      </div>
+    </div>
+    <div class="kc-field">
+      <div class="kc-label-row">
+        <label for="base-url">API 地址</label
+        ><span class="kc-state" id="config-status">正在加载</span>
+      </div>
+      <p class="kc-muted">
+        填写 OpenAI 兼容接口的 Base URL。DeepSeek 可填
+        https://api.deepseek.com。
+      </p>
+      <input
+        id="base-url"
+        type="url"
+        maxlength="2048"
+        placeholder="https://api.example.com/v1"
+        required
+      />
+    </div>
+    <div class="kc-field">
+      <div class="kc-label-row">
+        <label for="api-key">API 密钥</label
+        ><span class="kc-muted" id="key-status">尚未设置</span>
+      </div>
+      <p id="key-help" class="kc-muted">密钥保存在服务器，读取时不会返回。</p>
+      <div class="kc-password">
+        <input
+          id="api-key"
+          type="password"
+          autocomplete="off"
+          spellcheck="false"
+          maxlength="8192"
+          placeholder="输入 API 密钥"
+        /><button
+          type="button"
+          class="kc-reveal"
+          data-reveal="api-key"
+          aria-label="显示密钥"
+          aria-pressed="false"
+        >
+          显示
+        </button>
+      </div>
+    </div>
+    <div class="kc-field">
+      <div class="kc-label-row">
+        <label for="chat-model">对话模型</label
+        ><button
+          id="refresh-models"
+          type="button"
+          class="kc-button kc-small-button"
+        >
+          读取模型
+        </button>
+      </div>
+      <p id="models-help" class="kc-muted">
+        填写地址和密钥后读取 /models，在列表中选择模型。
+      </p>
+      <select id="chat-model" required>
+        <option value="">请先读取模型列表</option>
+      </select>
+    </div>
+    <div class="kc-field kc-test-options">
+      <div>
+        <label for="enable-embedding">使用知识库向量检索（可选）</label>
+        <p class="kc-muted">
+          普通客服回复无需开启，仍可使用项目提示词。仅在使用知识库时配置。
+        </p>
+      </div>
+      <input id="enable-embedding" type="checkbox" />
+    </div>
+    <div id="embedding-options" hidden>
+      <div class="kc-field">
+        <label for="embedding-base-url"
+          >向量 API 地址（可使用独立服务商）</label
+        >
+        <p class="kc-muted">
+          留空复用对话接口；使用 DeepSeek 对话时，可在这里填写支持 Embeddings
+          的另一家服务商。
+        </p>
+        <input
+          id="embedding-base-url"
+          type="url"
+          maxlength="2048"
+          placeholder="留空复用上方 API 地址"
+        />
+      </div>
+      <div class="kc-field">
+        <div class="kc-label-row">
+          <label for="embedding-api-key">向量 API 密钥</label
+          ><span class="kc-muted" id="embedding-key-status">尚未设置</span>
+        </div>
+        <p class="kc-muted">
+          独立服务商需单独填写密钥。已保存时留空保留；同一接口且未设置独立密钥时复用对话密钥。
+        </p>
+        <div class="kc-password">
+          <input
+            id="embedding-api-key"
+            type="password"
+            autocomplete="off"
+            spellcheck="false"
+            maxlength="8192"
+            placeholder="独立服务商的 API 密钥"
+          /><button
+            type="button"
+            class="kc-reveal"
+            data-reveal="embedding-api-key"
+            aria-label="显示密钥"
+            aria-pressed="false"
+          >
+            显示
+          </button>
+        </div>
+      </div>
+      <div class="kc-field">
+        <div class="kc-label-row">
+          <label for="embedding-model">向量模型</label
+          ><button
+            id="refresh-embedding-models"
+            type="button"
+            class="kc-button kc-small-button"
+          >
+            读取向量模型
+          </button>
+        </div>
+        <p class="kc-muted" id="embedding-models-help">
+          需支持 Embeddings，且输出 1536 维。列表来自向量接口的
+          /models；更换模型后请重新生成知识库向量。
+        </p>
+        <select id="embedding-model">
+          <option value="">请选择支持向量检索的模型</option>
+        </select>
+      </div>
+      <div class="kc-field kc-test-options">
+        <div>
+          <label for="test-embedding">同时测试知识库向量模型</label>
+          <p class="kc-muted">选中后会额外调用一次向量接口。</p>
+        </div>
+        <input id="test-embedding" type="checkbox" />
+      </div>
+    </div>
+    <p class="kc-muted kc-test-help">
+      测试连接使用当前表单参数，会发送简短请求并可能产生少量服务商费用，不会保存配置。
+    </p>
+    <div class="kc-save-info">
+      <span id="save-state">正在读取配置…</span
+      ><span>配置来源：<span id="config-source">—</span></span>
+    </div>
+    <p
+      class="kc-message"
+      id="form-message"
+      role="status"
+      aria-live="polite"
+    ></p>
+    <div id="knowledge-tools" class="kc-field" hidden>
+      <div class="kc-label-row">
+        <h3>当前项目知识库</h3>
+        <button
+          type="button"
+          id="refresh-knowledge"
+          class="kc-button kc-small-button"
+        >
+          刷新状态
+        </button>
+      </div>
+      <p id="knowledge-status" class="kc-muted">正在读取知识库状态…</p>
+      <p class="kc-muted">
+        生成索引会把文档正文发送到你配置的向量服务商并产生 API
+        用量。保存并测试接口后生成索引。客服收到问题时会自动检索最相关的 3
+        条资料，交给对话模型参考。AI 回复开关仍在「智能回复」。
+      </p>
+      <div id="knowledge-source">
+        <h3>文档自动同步</h3>
+        <p class="kc-muted">
+          支持 V2Board 风格的 knowledge/fetch
+          接口，自动读取目录与正文。只更新有变化的条目，并在向量接口可用时生成索引；来源撤下的条目保留存档并退出检索。
+        </p>
+        <label for="source-url">文档 API 地址</label
+        ><input
+          id="source-url"
+          type="text"
+          inputmode="url"
+          maxlength="2048"
+          placeholder="https://example.com/api/v1/admin/knowledge/fetch"
+        />
+        <label for="source-docs-url">用户查看教程的地址</label
+        ><input
+          id="source-docs-url"
+          type="text"
+          inputmode="url"
+          maxlength="2048"
+          placeholder="https://example.com/#/docs"
+        />
+        <label for="source-authorization">Authorization 令牌</label
+        ><input
+          id="source-authorization"
+          type="password"
+          autocomplete="off"
+          maxlength="8192"
+          placeholder="填完整 Authorization 值，已保存时留空保留"
+        />
+        <p class="kc-muted" id="source-token-state">
+          令牌仅保存在服务器，不会返回浏览器。请使用只读令牌；如果令牌失效，同步会停止并保留现有文档。
+        </p>
+        <label for="source-interval">同步间隔（分钟）</label
+        ><input
+          id="source-interval"
+          type="number"
+          min="15"
+          max="10080"
+          value="60"
+        />
+        <label
+          ><input id="source-enabled" type="checkbox" /> 开启定时同步</label
+        >
+        <p class="kc-muted">
+          启用后，变更的教程正文将发送到你配置的向量服务商生成索引，并产生相应
+          API 用量。
+        </p>
+        <div class="kc-actions">
+          <button type="button" id="save-source" class="kc-button">
+            保存文档来源</button
+          ><button type="button" id="sync-source" class="kc-button">
+            立即同步
+          </button>
+        </div>
+        <p
+          id="source-status"
+          class="kc-message"
+          role="status"
+          aria-live="polite"
+        >
+          尚未配置文档来源
+        </p>
+      </div>
+      <label
+        ><input type="checkbox" id="reindex-all" />
+        重新生成全部条目（更换向量模型后使用）</label
+      >
+      <div class="kc-actions">
+        <button type="button" id="index-knowledge" class="kc-button">
+          生成知识库向量
+        </button>
+      </div>
+      <p
+        id="knowledge-message"
+        class="kc-message"
+        role="status"
+        aria-live="polite"
+      ></p>
+    </div>
+  </form>
+</section>

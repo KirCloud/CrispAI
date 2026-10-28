@@ -13,7 +13,10 @@ import { crispWebhook } from "@/services/crisp.service";
 import * as storage from "@/services/storage.service";
 import logger from "@/services/logger.service";
 import api from "@/api";
-import { createConsoleRoutes } from "@/services/console.service";
+import {
+  createConsoleRoutes,
+  mountOriginalConsole,
+} from "@/services/console.service";
 
 // 管理页面的静态文件。前端源码不在这个仓库里，打包后的产物同步到 public/ 并随仓库提交
 const WEB_DIR = Bun.env.WEB_DIR
@@ -24,6 +27,7 @@ const hono = new Hono();
 hono.use("*", loggerMiddleware);
 hono.use("/api/auth/*", bodyLimit({ maxSize: 16 * 1024 }));
 hono.use("/api/v1/settings/*", bodyLimit({ maxSize: 32 * 1024 }));
+hono.use("/api/v1/knowledge/*", bodyLimit({ maxSize: 16 * 1024 }));
 
 hono.onError((error, c) => {
   // basicAuth 等中间件用 HTTPException 表达 401，要原样返回（带 WWW-Authenticate 头浏览器才会弹登录框）
@@ -64,8 +68,7 @@ hono.route("/api/v1", api);
  * 这样静态文件兜底不会抢在其他路由前面
  */
 export const mountWeb = () => {
-  hono.use("*", authMiddleware);
-  hono.use("*", serveStatic({ root: WEB_DIR }));
+  mountOriginalConsole(hono, undefined, WEB_DIR);
   hono.notFound((c) => c.text("Not Found", 404));
 };
 

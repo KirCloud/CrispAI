@@ -3,6 +3,7 @@ import hono, { authMiddleware, mountWeb } from "@/services/hono.service";
 import { migrate } from "@/services/db.service";
 import { setupWebhook } from "@/services/telegram.service";
 import { loadWorkers, serverAdapter, setupWorkerShutdown } from "@/workers";
+import { startKnowledgeSync } from "@/services/knowledge-runtime.service";
 import { aiConfig } from "@/services/openai.service";
 
 // 进程级兜底：只记录日志，不退出进程。
@@ -50,7 +51,10 @@ try {
   const port = Bun.env.PORT ? parseInt(Bun.env.PORT) : 3000;
   Bun.serve({
     port,
-    fetch: (request, server) => hono.fetch(request, { remoteAddress: server.requestIP(request)?.address }),
+    fetch: (request, server) =>
+      hono.fetch(request, {
+        remoteAddress: server.requestIP(request)?.address,
+      }),
   });
   logger.info(`HTTP 服务已启动，端口: ${port}`);
   logger.info(`环境: ${Bun.env.NODE_ENV || "development"}`);
@@ -61,3 +65,5 @@ try {
 }
 
 void setupWebhook();
+
+startKnowledgeSync();

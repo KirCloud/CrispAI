@@ -111,6 +111,12 @@ create index if not exists session_website_id_idx  on public.session (website_id
 create index if not exists session_enable_idx      on public.session (enable_reply, enable_time);
 
 -- ---------------------------------------------------------------------------
+-- Optional provenance for documents maintained by an external knowledge source.
+alter table public.payload add column if not exists source_key text;
+alter table public.payload add column if not exists source_hash text;
+alter table public.payload add column if not exists source_active boolean not null default true;
+create unique index if not exists payload_source_key on public.payload (project, source_key);
+
 -- 5. match_payloads(project, query_embedding, match_count)：知识库向量检索（余弦相似度）
 --    调用：messageSend.task.ts searchDocuments()，只用了返回值里的 raw
 -- ---------------------------------------------------------------------------
@@ -130,7 +136,7 @@ as $$
          1 - (p.vector <=> query_embedding) as similarity
   from public.payload p
   where p.project = match_payloads.project
-    and p.vector is not null
+    and p.vector is not null and p.source_active
   order by p.vector <=> query_embedding
   limit match_count;
 $$;

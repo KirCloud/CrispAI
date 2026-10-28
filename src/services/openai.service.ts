@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import {
   AIConfigManager,
   hasAIKey,
+  resolveEmbeddingConnection,
   type AIConfig,
 } from "@/services/ai-config.service";
 import { getAppSetting, saveAppSetting } from "@/services/db.service";
@@ -15,7 +16,9 @@ export const aiConfig = new AIConfigManager(
     baseUrl: Bun.env.OPENAI_URL || "https://api.openai.com/v1",
     apiKey: Bun.env.OPENAI_KEY || "",
     model: Bun.env.OPENAI_MODEL || "gpt-4.1-nano",
-    embeddingModel: Bun.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small",
+    embeddingModel: Bun.env.OPENAI_EMBEDDING_MODEL || "",
+    embeddingBaseUrl: Bun.env.EMBEDDING_URL || "",
+    embeddingApiKey: Bun.env.EMBEDDING_KEY || "",
   },
 );
 
@@ -41,8 +44,16 @@ export const createAIProvider = (manager: AIConfigManager) => {
 };
 export const getAIProvider = createAIProvider(aiConfig);
 
-export const createEmbedding = async (input: string) => {
-  const { client, embeddingModel } = getAIProvider();
+export const createEmbeddingFor = async (config: AIConfig, input: string) => {
+  const { embeddingModel } = config;
+  if (!embeddingModel) throw new Error("使用知识库前请先配置向量模型");
+  const connection = resolveEmbeddingConnection(config);
+  const client = new OpenAI({
+    baseURL: connection.baseUrl,
+    apiKey: connection.apiKey,
+    timeout: 30_000,
+    maxRetries: 1,
+  });
   const embedding = await client.embeddings.create({
     model: embeddingModel,
     input,
@@ -53,3 +64,6 @@ export const createEmbedding = async (input: string) => {
     throw new Error("知识库向量模型必须输出 1536 维向量");
   return vector;
 };
+
+export const createEmbedding = (input: string) =>
+  createEmbeddingFor(aiConfig.current(), input);

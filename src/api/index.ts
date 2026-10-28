@@ -11,7 +11,11 @@ import * as option from "@/api/option.controller";
 import * as payload from "@/api/payload.controller";
 import * as transfer from "@/api/transfer.controller";
 import { createAISettingsRoutes } from "@/api/ai-settings.controller";
-import { aiConfig } from "@/services/openai.service";
+import { createKnowledgeSourceRoutes } from "@/api/knowledge-source.controller";
+import { knowledgeSync } from "@/services/knowledge-runtime.service";
+import { createKnowledgeRoutes } from "@/api/knowledge.controller";
+import * as db from "@/services/db.service";
+import { aiConfig, createEmbedding } from "@/services/openai.service";
 
 /**
  * 管理后台接口（/api/v1）
@@ -42,6 +46,20 @@ api.post(
 
 api.use("*", authMiddleware);
 api.route("/settings/ai", createAISettingsRoutes(aiConfig));
+api.route(
+  "/knowledge/source",
+  createKnowledgeSourceRoutes(knowledgeSync, db.getProjectById),
+);
+api.route(
+  "/knowledge",
+  createKnowledgeRoutes({
+    list: db.listKnowledgeStatus,
+    get: db.getPayloadById,
+    embed: createEmbedding,
+    ready: () => Boolean(aiConfig.current().embeddingModel),
+    update: db.updatePayloadVector,
+  }),
+);
 
 // project
 api.get("/projects", project.listController);

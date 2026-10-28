@@ -1,4 +1,8 @@
-import { getAIProvider, createEmbedding } from "@/services/openai.service";
+import {
+  getAIProvider,
+  createEmbedding,
+  aiConfig,
+} from "@/services/openai.service";
 import * as db from "@/services/db.service";
 import * as telegram from "@/services/telegram.service";
 import * as crisp from "@/services/crisp.service";
@@ -286,6 +290,7 @@ async function handleKeywordReply(
   }
 }
 async function searchDocuments(project: string, query: string, matchCount = 3) {
+  if (!aiConfig.current().embeddingModel) return null;
   if (!(await db.hasPayload(project))) return null;
 
   const vector = await createEmbedding(query);
@@ -346,14 +351,14 @@ async function buildMessages(
 
   if (isJSON(project.payload)) {
     JSON.parse(project.payload).forEach((p: string) =>
-      messages.push({ role: "developer", content: p }),
+      messages.push({ role: "system", content: p }),
     );
   } else {
-    messages.push({ role: "developer", content: project.payload || "" });
+    messages.push({ role: "system", content: project.payload || "" });
   }
 
   messages.push({
-    role: "developer",
+    role: "system",
     content: JSON.stringify(
       await crisp.getMetas(body.website_id, body.session_id),
     ),

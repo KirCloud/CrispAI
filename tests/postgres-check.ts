@@ -1,5 +1,7 @@
 // Run only against a disposable database whose name ends in _test.
 import assert from "node:assert/strict";
+import { SQL } from "bun";
+import * as db from "../src/services/db.service";
 import { Hono } from "hono";
 import {
   migrate,
@@ -12,7 +14,10 @@ import {
 } from "../src/services/ai-config.service";
 import { createAISettingsRoutes } from "../src/api/ai-settings.controller";
 import { createAdminAuth } from "../src/services/admin-auth.service";
-import { createConsoleRoutes } from "../src/services/console.service";
+import {
+  createConsoleRoutes,
+  mountOriginalConsole,
+} from "../src/services/console.service";
 
 const database = new URL(
   Bun.env.DATABASE_URL || "postgres://localhost/missing",
@@ -46,6 +51,7 @@ const app = new Hono();
 app.route("/", createConsoleRoutes(auth));
 app.use("/api/v1/*", auth.middleware);
 app.route("/api/v1/settings/ai", createAISettingsRoutes(manager));
+mountOriginalConsole(app, auth);
 assert.equal((await app.request(origin + "/api/v1/settings/ai")).status, 401);
 const login = await app.request(origin + "/api/auth/login", {
   method: "POST",
@@ -93,5 +99,42 @@ assert.equal(
     .status,
   401,
 );
+const sql = new SQL(Bun.env.DATABASE_URL!);
+const project = crypto.randomUUID();
+await sql`insert into project (id, name) values (${project}, 'Disposable integration test')`;
+try {
+  const first = {
+    key: "v2board:1:0",
+    name: "Tutorial",
+    raw: "First version",
+    hash: "first",
+  };
+  await db.syncSourcePayloads(project, [first]);
+  assert.equal(await db.hasPayload(project), false);
+  const entry = (await db.listPendingSourcePayloads(project))[0]!;
+  const vector = Array(1536).fill(0.1);
+  assert.equal(await db.updatePayloadVector(entry, vector), true);
+  await db.syncSourcePayloads(project, [first]);
+  assert.equal((await db.listPendingSourcePayloads(project)).length, 0);
+  assert.equal(
+    (await db.matchPayloads(project, vector, 3))[0].raw,
+    "First version",
+  );
+  await db.syncSourcePayloads(project, [
+    { ...first, raw: "Updated version", hash: "second" },
+  ]);
+  assert.equal(await db.updatePayloadVector(entry, vector), false);
+  assert.equal((await db.listPendingSourcePayloads(project)).length, 1);
+  await db.syncSourcePayloads(project, []);
+  assert.equal((await db.listKnowledgeStatus(project)).length, 0);
+  assert.equal(
+    (await sql`select id from payload where project = ${project}`).length,
+    1,
+  );
+} finally {
+  await sql`delete from project where id = ${project}`;
+  await sql.close();
+}
+console.log("POSTGRES_SOURCE_UPDATES_ARCHIVAL_AND_VECTOR_RETRIEVAL_PASSED");
 console.log("POSTGRES_CONFIG_PERSISTENCE_AND_AUTH_ROUTES_PASSED");
 process.exit(0);

@@ -1,13 +1,11 @@
 import { z } from "zod";
 
-export const aiConfigSchema = z.object({
-  baseUrl: z
-    .string()
-    .trim()
-    .min(1)
-    .max(2048)
-    .url()
-    .refine((value) => {
+const apiUrl = z
+  .string()
+  .trim()
+  .max(2048)
+  .refine((value) => {
+    try {
       const url = new URL(value);
       return (
         ["https:", "http:"].includes(url.protocol) &&
@@ -16,26 +14,43 @@ export const aiConfigSchema = z.object({
         !url.search &&
         !url.hash
       );
-    }, "请输入不含账号、查询参数或片段的 HTTP(S) API 地址"),
-  apiKey: z
-    .string()
-    .trim()
-    .max(8192)
-    .refine((value) => !/[\r\n]/.test(value), "密钥不能包含换行")
-    .optional(),
+    } catch {
+      return false;
+    }
+  }, "请输入不含账号、查询参数或片段的 HTTP(S) API 地址");
+const apiKey = z
+  .string()
+  .trim()
+  .max(8192)
+  .refine((value) => !/[\r\n]/.test(value), "密钥不能包含换行")
+  .optional();
+export const aiConfigSchema = z.object({
+  baseUrl: apiUrl,
+  apiKey,
   model: z.string().trim().min(1).max(200),
-  embeddingModel: z.string().trim().min(1).max(200),
+  embeddingModel: z.string().trim().max(200).default(""),
+  embeddingBaseUrl: z.union([z.literal(""), apiUrl]).optional(),
+  embeddingApiKey: apiKey,
 });
-export type AIConfig = Required<z.infer<typeof aiConfigSchema>>;
+export type AIConfig = Omit<z.infer<typeof aiConfigSchema>, "apiKey"> & {
+  apiKey: string;
+};
 export type AIConfigInput = z.infer<typeof aiConfigSchema>;
 export type AIConfigStore = {
   load: () => Promise<AIConfig | null>;
   save: (value: AIConfig) => Promise<void>;
 };
-
-export const hasAIKey = (value: string) =>
+export const hasAIKey = (value: string | undefined) =>
   Boolean(value && value !== "not-configured");
-
+const normalizeUrl = (value: string) => value.replace(/\/+$/, "");
+export function resolveEmbeddingConnection(config: AIConfig) {
+  const baseUrl = normalizeUrl(config.embeddingBaseUrl || config.baseUrl);
+  // A different provider must never receive the chat provider's credential.
+  const sameProvider = baseUrl === normalizeUrl(config.baseUrl);
+  const apiKey = config.embeddingApiKey || (sameProvider ? config.apiKey : "");
+  if (!hasAIKey(apiKey)) throw new Error("请填写向量接口的独立 API 密钥");
+  return { baseUrl, apiKey };
+}
 export class AIConfigManager {
   private config: AIConfig;
   private ready = false;
@@ -50,7 +65,8 @@ export class AIConfigManager {
   async initialize() {
     const saved = await this.store.load();
     if (saved) {
-      this.config = aiConfigSchema.required().parse(saved);
+      const parsed = aiConfigSchema.parse(saved);
+      this.config = { ...parsed, apiKey: parsed.apiKey || "" };
       this.source = "database";
     }
     this.ready = true;
@@ -60,20 +76,37 @@ export class AIConfigManager {
     return { ...this.config };
   }
   publicConfig() {
-    const { apiKey, ...config } = this.current();
+    const { apiKey, embeddingApiKey, ...config } = this.current();
     return {
       ...config,
       hasApiKey: hasAIKey(apiKey),
+      hasEmbeddingApiKey: hasAIKey(embeddingApiKey),
       configured: hasAIKey(apiKey),
       source: this.source,
     };
   }
-  resolve(input: AIConfigInput) {
+  resolve(input: AIConfigInput): AIConfig {
     const parsed = aiConfigSchema.parse(input);
+    const current = this.current();
     return {
       ...parsed,
-      baseUrl: parsed.baseUrl.replace(/\/+$/, ""),
-      apiKey: parsed.apiKey || this.current().apiKey,
+      baseUrl: normalizeUrl(parsed.baseUrl),
+      apiKey: parsed.apiKey || current.apiKey,
+      ...(parsed.embeddingBaseUrl !== undefined ||
+      current.embeddingBaseUrl !== undefined
+        ? {
+            embeddingBaseUrl: normalizeUrl(
+              parsed.embeddingBaseUrl ?? current.embeddingBaseUrl ?? "",
+            ),
+          }
+        : {}),
+      ...(parsed.embeddingApiKey !== undefined ||
+      current.embeddingApiKey !== undefined
+        ? {
+            embeddingApiKey:
+              parsed.embeddingApiKey || current.embeddingApiKey || "",
+          }
+        : {}),
     };
   }
   async save(input: AIConfigInput) {
@@ -81,6 +114,7 @@ export class AIConfigManager {
       .catch(() => {})
       .then(async () => {
         const config = this.resolve(input);
+        if (config.embeddingModel) resolveEmbeddingConnection(config);
         await this.store.save(config);
         this.config = config;
         this.source = "database";

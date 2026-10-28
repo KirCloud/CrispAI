@@ -3,10 +3,14 @@ import { Hono } from "hono";
 import {
   AIConfigManager,
   aiConfigSchema,
+  resolveEmbeddingConnection,
   type AIConfig,
 } from "../src/services/ai-config.service";
 import { createAISettingsRoutes } from "../src/api/ai-settings.controller";
-import { createAIProvider } from "../src/services/openai.service";
+import {
+  createAIProvider,
+  createEmbeddingFor,
+} from "../src/services/openai.service";
 
 const defaults: AIConfig = {
   baseUrl: "https://provider.example/v1",
@@ -44,7 +48,10 @@ const provider = Bun.serve({
   hostname: "127.0.0.1",
   port: 0,
   async fetch(request) {
-    const body = (await request.json()) as { model: string };
+    const body =
+      request.method === "GET"
+        ? { model: "" }
+        : ((await request.json()) as { model: string });
     const path = new URL(request.url).pathname;
     calls.push({
       path,
@@ -61,6 +68,18 @@ const provider = Bun.serve({
         },
         { status: providerStatus },
       );
+    if (path.endsWith("/models"))
+      return Response.json({
+        data: [
+          {
+            id: "deepseek-v4-pro",
+            name: "DeepSeek Pro",
+            secret: "must-not-return",
+          },
+          { id: "deepseek-flash", name: "DeepSeek Flash" },
+          { id: "deepseek-flash" },
+        ],
+      });
     if (path.endsWith("/embeddings"))
       return Response.json({
         data: [{ embedding: Array(dimensions).fill(0.1), index: 0 }],
@@ -73,6 +92,62 @@ const provider = Bun.serve({
 afterAll(() => provider.stop(true));
 
 describe("global AI configuration", () => {
+  test("model discovery calls GET /models with draft connection settings, deduplicates and never returns credentials", async () => {
+    const { app, manager } = await fixture();
+    calls.length = 0;
+    const response = await app.request("/settings/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        baseUrl: `http://127.0.0.1:${provider.port}/v1`,
+        apiKey: "",
+      }),
+    });
+    const data = (await response.json()) as {
+      data: { id: string; name: string }[];
+    };
+    expect(response.status).toBe(200);
+    expect(data.data.map((model) => model.id)).toEqual([
+      "deepseek-flash",
+      "deepseek-v4-pro",
+    ]);
+    expect(calls[0]!.path).toBe("/v1/models");
+    expect(calls[0]!.authorization).toBe("Bearer original-secret");
+    expect(JSON.stringify(data)).not.toContain("original-secret");
+    expect(JSON.stringify(data)).not.toContain("must-not-return");
+    expect(manager.current()).toEqual(defaults);
+  });
+  test("plain conversation config accepts no vector model and chat tests do not call embeddings", async () => {
+    const { app, manager } = await fixture();
+    const config = {
+      baseUrl: `http://127.0.0.1:${provider.port}/v1`,
+      apiKey: "draft-secret",
+      model: "deepseek-flash",
+    };
+    const saved = await app.request("/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(config),
+    });
+    expect(saved.status).toBe(200);
+    expect(manager.current().embeddingModel).toBe("");
+    calls.length = 0;
+    const response = await app.request("/settings/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(config),
+    });
+    expect(response.status).toBe(200);
+    expect(calls.map((call) => call.path)).toEqual(["/v1/chat/completions"]);
+    calls.length = 0;
+    const invalid = await app.request("/settings/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...config, testEmbedding: true }),
+    });
+    expect(invalid.status).toBe(400);
+    expect(calls).toHaveLength(0);
+  });
   test("saved settings switch the live SDK client, credentials and model without a restart", async () => {
     const { manager } = await fixture();
     const getProvider = createAIProvider(manager);
@@ -206,6 +281,115 @@ describe("global AI configuration", () => {
     expect(response.status).toBe(502);
     expect(text).not.toContain("DO-NOT-LEAK");
     expect(text).not.toContain("original-secret");
+    const models = await app.request("/settings/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        baseUrl: `http://127.0.0.1:${provider.port}/v1`,
+        apiKey: "",
+      }),
+    });
+    expect(models.status).toBe(502);
+    expect(await models.text()).not.toContain("DO-NOT-LEAK");
     providerStatus = 200;
+  });
+});
+
+describe("independent embedding connection", () => {
+  test("legacy settings without new fields still load", async () => {
+    const manager = new AIConfigManager(
+      { load: async () => defaults, save: async () => {} },
+      defaults,
+    );
+    await manager.initialize();
+    expect(manager.current()).toEqual(defaults);
+    expect(resolveEmbeddingConnection(manager.current()).apiKey).toBe(
+      "original-secret",
+    );
+  });
+  test("independent providers never receive the chat key and both secrets stay masked", async () => {
+    const { manager, app } = await fixture();
+    const config = {
+      ...defaults,
+      baseUrl: `http://127.0.0.1:${provider.port}/chat`,
+      embeddingBaseUrl: `http://127.0.0.1:${provider.port}/vector`,
+      embeddingApiKey: "vector-secret",
+    };
+    await manager.save(config);
+    calls.length = 0;
+    const response = await app.request("/settings/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...config,
+        apiKey: "",
+        embeddingApiKey: "",
+        testEmbedding: true,
+      }),
+    });
+    expect(response.status).toBe(200);
+    expect(calls.map((call) => [call.path, call.authorization])).toEqual([
+      ["/chat/chat/completions", "Bearer original-secret"],
+      ["/vector/embeddings", "Bearer vector-secret"],
+    ]);
+    const text = await (await app.request("/settings")).text();
+    expect(text).not.toContain("vector-secret");
+    expect(text).not.toContain("original-secret");
+    expect(JSON.parse(text).data.hasEmbeddingApiKey).toBe(true);
+    calls.length = 0;
+    const models = await app.request("/settings/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        baseUrl: config.baseUrl,
+        embeddingBaseUrl: config.embeddingBaseUrl,
+        embeddingApiKey: "",
+        target: "embedding",
+      }),
+    });
+    expect(models.status).toBe(200);
+    expect(calls[0]!.path).toBe("/vector/models");
+    expect(calls[0]!.authorization).toBe("Bearer vector-secret");
+  });
+  test("a different embedding endpoint requires its own key before any network request", async () => {
+    const { app } = await fixture();
+    calls.length = 0;
+    for (const route of ["models", "test"]) {
+      const response = await app.request(`/settings/${route}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...defaults,
+          embeddingBaseUrl: "https://different.example/v1",
+          target: "embedding",
+          testEmbedding: true,
+        }),
+      });
+      expect(response.status).toBe(400);
+    }
+    expect(calls).toHaveLength(0);
+  });
+  test("indexing uses the embedding key even before chat credentials are configured", async () => {
+    calls.length = 0;
+    const vector = await createEmbeddingFor(
+      {
+        ...defaults,
+        apiKey: "",
+        embeddingBaseUrl: `http://127.0.0.1:${provider.port}/vector`,
+        embeddingApiKey: "vector-only",
+      },
+      "tutorial",
+    );
+    expect(vector).toHaveLength(1536);
+    expect(calls[0]!.authorization).toBe("Bearer vector-only");
+  });
+  test("invalid URL values are validation errors rather than exceptions", () => {
+    expect(
+      aiConfigSchema.safeParse({ ...defaults, baseUrl: "not a url" }).success,
+    ).toBe(false);
+    expect(
+      aiConfigSchema.safeParse({ ...defaults, embeddingBaseUrl: "invalid" })
+        .success,
+    ).toBe(false);
   });
 });

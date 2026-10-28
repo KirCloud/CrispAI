@@ -31,9 +31,12 @@ export const migrate = async (retries = 30, interval = 2000) => {
       return;
     } catch (error) {
       if (i >= retries) throw error;
-      logger.warn(`数据库暂不可用，${interval / 1000} 秒后重试 (${i}/${retries})`, {
-        message: error instanceof Error ? error.message : String(error),
-      });
+      logger.warn(
+        `数据库暂不可用，${interval / 1000} 秒后重试 (${i}/${retries})`,
+        {
+          message: error instanceof Error ? error.message : String(error),
+        },
+      );
       await Bun.sleep(interval);
     }
   }
@@ -67,7 +70,10 @@ export const getAppSetting = async (key: string) => {
   return row?.value ?? null;
 };
 
-export const saveAppSetting = async (key: string, value: Record<string, unknown>) => {
+export const saveAppSetting = async (
+  key: string,
+  value: Record<string, unknown>,
+) => {
   await sql`insert into app_setting ${sql({ key, value })}
     on conflict (key) do update set value = excluded.value, updated_at = now()`;
 };
@@ -240,7 +246,7 @@ const toVector = (embedding: number[]) => JSON.stringify(embedding);
 
 export const hasPayload = async (projectId: string) => {
   const [row] = await sql`
-    select 1 from payload where project = ${projectId} limit 1`;
+    select 1 from payload where project = ${projectId} and vector is not null and source_active limit 1`;
   return !!row;
 };
 // 列表不返回 vector，1536 维一条就有十几 KB
@@ -249,8 +255,24 @@ export const listPayloads = async (projectId: string): Promise<any[]> => {
     select id, project, name, raw, created_at from payload
     where project = ${projectId} order by created_at desc`;
 };
+export const listKnowledgeStatus = async (project: string) => {
+  return await sql`select id, name, vector is not null as indexed from payload
+    where project = ${project} and source_active order by created_at asc`;
+};
+export const updatePayloadVector = async (
+  entry: { id: string; project: string; raw: string },
+  vector: number[],
+) => {
+  const rows =
+    await sql`update payload set vector = ${toVector(vector)}::extensions.vector
+    where id = ${entry.id} and project = ${entry.project} and raw = ${entry.raw} and source_active
+    returning id`;
+  return rows.length === 1;
+};
 // 导出用：vector 以文本形式 "[0.1,0.2,...]" 带出
-export const listPayloadsWithVector = async (projectId: string): Promise<any[]> => {
+export const listPayloadsWithVector = async (
+  projectId: string,
+): Promise<any[]> => {
   return await sql`
     select id, name, raw, vector::text as vector, created_at from payload
     where project = ${projectId} order by created_at asc`;
@@ -337,3 +359,39 @@ export const importProject = async (data: {
 };
 
 export default sql;
+
+// Synchronization only manages rows bearing this source prefix. Manual entries
+// are untouched, and withdrawn source entries are archived rather than deleted.
+export const syncSourcePayloads = async (
+  project: string,
+  entries: { key: string; hash: string; name: string; raw: string }[],
+) => {
+  await sql.begin(async (tx) => {
+    for (const entry of entries) {
+      await tx`insert into payload (project, name, raw, source_key, source_hash)
+        values (${project}, ${entry.name}, ${entry.raw}, ${entry.key}, ${entry.hash})
+        on conflict (project, source_key) do update set
+          name = excluded.name, raw = excluded.raw, source_hash = excluded.source_hash,
+          source_active = true,
+          vector = case when payload.source_hash = excluded.source_hash and payload.source_active
+            then payload.vector else null end
+        where payload.source_hash is distinct from excluded.source_hash or not payload.source_active`;
+    }
+    const keys = entries.map((entry) => entry.key);
+    await tx`update payload set source_active = false, vector = null
+      where project = ${project} and source_key like 'v2board:%'
+        and not (source_key = any(${keys}::text[]))`;
+  });
+};
+export const listPendingSourcePayloads = async (project: string) =>
+  await sql`
+  select id, project, name, raw from payload where project = ${project}
+  and source_key like 'v2board:%' and source_active and vector is null order by created_at`;
+export const listKnowledgeSources = async () => {
+  const rows = await sql`select a.key, a.value from app_setting a
+    join project p on a.key = 'knowledge_source:' || p.id::text`;
+  return rows.map((row: { key: string; value: any }) => ({
+    project: row.key.slice("knowledge_source:".length),
+    config: row.value,
+  }));
+};
