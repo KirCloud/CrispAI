@@ -26,7 +26,10 @@ export const extendOriginalConsole: MiddlewareHandler = async (c, next) => {
     !c.res.headers.get("Content-Type")?.includes("text/html")
   )
     return;
-  c.res = new HTMLRewriter()
+  // Buffer the small HTML document before handing it back to Hono. Bun 1.3
+  // aborts a transformed file stream when Hono wraps the response body.
+  const original = c.res;
+  const rewritten = new HTMLRewriter()
     .on("head", {
       element(element) {
         element.append(
@@ -35,7 +38,13 @@ export const extendOriginalConsole: MiddlewareHandler = async (c, next) => {
         );
       },
     })
-    .transform(c.res);
+    .transform(new Response(await original.text()));
+  const html = await rewritten.text();
+  original.headers.delete("Content-Length");
+  c.res = new Response(html, {
+    status: original.status,
+    headers: original.headers,
+  });
 };
 
 export function createConsoleRoutes(auth = adminAuth) {
