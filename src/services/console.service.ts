@@ -1,10 +1,27 @@
 import path from "node:path";
+import { createHash } from "node:crypto";
+import { readFileSync, readdirSync } from "node:fs";
 import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { serveStatic } from "hono/bun";
 import { adminAuth, safeReturnPath } from "@/services/admin-auth.service";
 
 export const CONSOLE_DIR = path.resolve(import.meta.dir, "../../web");
 export const ORIGINAL_DIR = path.resolve(import.meta.dir, "../../public");
+// Put the version in the URL path: CDNs can cache scripts despite no-cache,
+// and some configurations ignore query parameters when choosing cache keys.
+export function consoleAssetVersion(root = CONSOLE_DIR) {
+  const hash = createHash("sha256");
+  for (const file of [
+    "ai-panel.html",
+    ...readdirSync(path.join(root, "assets"))
+      .sort()
+      .map((name) => "assets/" + name),
+  ]) {
+    hash.update(file + "\0").update(readFileSync(path.join(root, file)));
+  }
+  return hash.digest("hex").slice(0, 16);
+}
+export const CONSOLE_ASSET_PREFIX = `/console-assets/${consoleAssetVersion()}`;
 
 export function mountOriginalConsole(
   app: Hono,
@@ -33,7 +50,7 @@ export const extendOriginalConsole: MiddlewareHandler = async (c, next) => {
     .on("head", {
       element(element) {
         element.append(
-          '<link rel="stylesheet" href="/console-assets/console.css?v=3"><script type="module" src="/console-assets/extension.js?v=3"></script>',
+          `<link rel="stylesheet" href="${CONSOLE_ASSET_PREFIX}/console.css"><script type="module" src="${CONSOLE_ASSET_PREFIX}/extension.js"></script>`,
           { html: true },
         );
       },
@@ -41,6 +58,7 @@ export const extendOriginalConsole: MiddlewareHandler = async (c, next) => {
     .transform(new Response(await original.text()));
   const html = await rewritten.text();
   original.headers.delete("Content-Length");
+  original.headers.set("Cache-Control", "no-store");
   c.res = new Response(html, {
     status: original.status,
     headers: original.headers,
@@ -63,8 +81,30 @@ export function createConsoleRoutes(auth = adminAuth) {
         "<!-- AI_PANEL -->",
         await Bun.file(path.join(CONSOLE_DIR, "ai-panel.html")).text(),
       );
+    html = html.replaceAll("__CONSOLE_ASSETS__", CONSOLE_ASSET_PREFIX);
     return c.html(html);
   };
+  routes.get("/console-assets/:version/:file", async (c) => {
+    const file = c.req.param("file");
+    if (
+      `/console-assets/${c.req.param("version")}` !== CONSOLE_ASSET_PREFIX ||
+      !["console.js", "site-api.js", "extension.js", "console.css"].includes(
+        file,
+      )
+    )
+      return c.notFound();
+    c.header("Cache-Control", "public, max-age=31536000, immutable");
+    c.header(
+      "Content-Type",
+      file.endsWith(".css")
+        ? "text/css; charset=utf-8"
+        : "text/javascript; charset=utf-8",
+    );
+    c.header("X-Content-Type-Options", "nosniff");
+    return c.body(
+      await Bun.file(path.join(CONSOLE_DIR, "assets", file)).arrayBuffer(),
+    );
+  });
   routes.use("/console-assets/*", async (c, next) => {
     c.header("Cache-Control", "no-cache");
     await next();

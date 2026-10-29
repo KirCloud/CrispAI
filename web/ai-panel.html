@@ -216,6 +216,7 @@
         <label for="site-api-base">网站 API 地址</label>
         <input
           id="site-api-base"
+          disabled
           type="url"
           maxlength="2048"
           placeholder="https://api.example.com/api/v1"
@@ -223,6 +224,7 @@
         <label for="site-api-url">官网地址</label>
         <input
           id="site-api-url"
+          disabled
           type="url"
           maxlength="2048"
           placeholder="https://example.com"
@@ -230,6 +232,7 @@
         <label for="site-api-token">Authorization 令牌</label>
         <input
           id="site-api-token"
+          disabled
           type="password"
           autocomplete="off"
           maxlength="8192"
@@ -240,24 +243,27 @@
           API 地址需重新填写令牌。
         </p>
         <label
-          ><input id="site-api-enabled" type="checkbox" /> 开启 AI
+          ><input id="site-api-enabled" disabled type="checkbox" /> 开启 AI
           网站实时查询</label
         >
         <div class="kc-actions">
-          <button type="button" id="save-site-api" class="kc-button">
+          <button type="button" disabled id="save-site-api" class="kc-button">
             保存网站查询
           </button>
-          <button type="button" id="test-site-api" class="kc-button">
+          <button type="button" disabled id="test-site-api" class="kc-button">
             测试已保存接口
           </button>
         </div>
+        <button type="button" id="reload-site-api" class="kc-button" disabled>
+          重新读取
+        </button>
         <p
           class="kc-message"
           id="site-api-status"
           role="status"
           aria-live="polite"
         >
-          尚未配置网站查询
+          正在读取已保存的网站查询配置…
         </p>
       </div>
       <div id="knowledge-source">

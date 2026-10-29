@@ -1,4 +1,4 @@
-import { mountAIForm, logout } from "/console-assets/console.js?v=3";
+import { mountAIForm, logout } from "./console.js";
 
 let currentList;
 let panel;
