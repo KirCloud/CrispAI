@@ -268,7 +268,7 @@ export function mountAIForm(form) {
   form.addEventListener("input", (event) => {
     if (
       loaded &&
-      !event.target.closest("#knowledge-source") &&
+      !event.target.closest("#knowledge-source,#site-api") &&
       !["test-embedding", "reindex-all"].includes(event.target.id)
     ) {
       setDirty(true);
@@ -397,6 +397,72 @@ export function mountAIForm(form) {
         await refreshKnowledge().catch(() => {});
         setBusy(false);
       }
+    });
+    const siteAPIPath = `/api/v1/site-api?project_id=${encodeURIComponent(projectId)}`;
+    async function readSiteAPI() {
+      const { data } = await request(siteAPIPath);
+      if (data) {
+        $("#site-api-base").value = data.apiBaseUrl;
+        $("#site-api-url").value = data.siteUrl;
+        $("#site-api-enabled").checked = data.enabled;
+        $("#site-api-status").textContent =
+          `${data.enabled ? "实时查询已开启" : "实时查询已关闭"} · ${data.hasAuthorization ? "令牌已保存（留空保留）" : "尚未保存令牌"}`;
+      }
+    }
+    $("#save-site-api").addEventListener("click", async () => {
+      if (busy) return;
+      if (
+        !["site-api-base", "site-api-url"].every(
+          (id) => $("#" + id).value && $("#" + id).reportValidity(),
+        )
+      ) {
+        $("#site-api-status").textContent = "请填写网站 API 地址和官网地址。";
+        return;
+      }
+      setBusy(true);
+      try {
+        await request(siteAPIPath, {
+          method: "PUT",
+          body: {
+            apiBaseUrl: $("#site-api-base").value.trim(),
+            siteUrl: $("#site-api-url").value.trim(),
+            authorization: $("#site-api-token").value.trim(),
+            enabled: $("#site-api-enabled").checked,
+          },
+        });
+        $("#site-api-token").value = "";
+        await readSiteAPI();
+      } catch (error) {
+        $("#site-api-status").textContent = error.message;
+      } finally {
+        setBusy(false);
+      }
+    });
+    $("#test-site-api").addEventListener("click", async () => {
+      if (busy) return;
+      setBusy(true);
+      $("#site-api-status").textContent = "正在测试已保存的接口…";
+      try {
+        const result = await request(
+          `/api/v1/site-api/test?project_id=${encodeURIComponent(projectId)}`,
+          { method: "POST", body: {} },
+        );
+        $("#site-api-status").textContent =
+          result.message +
+          (result.data
+            ? " · " +
+              result.data
+                .map((r) => `${r.topic}: ${r.ok ? "通过" : "失败"}`)
+                .join(" / ")
+            : "");
+      } catch (error) {
+        $("#site-api-status").textContent = error.message;
+      } finally {
+        setBusy(false);
+      }
+    });
+    void readSiteAPI().catch((error) => {
+      $("#site-api-status").textContent = error.message;
     });
     const sourcePath = `/api/v1/knowledge/source?project_id=${encodeURIComponent(projectId)}`;
     function sourceStatus(data) {

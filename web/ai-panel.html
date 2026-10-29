@@ -207,6 +207,59 @@
         全文模式无需生成向量，回复时直接引用最新的同步资料。AI
         回复开关仍在「智能回复」。
       </p>
+      <div id="site-api" class="kc-field">
+        <h3>网站实时查询</h3>
+        <p class="kc-muted">
+          让支持工具调用的对话模型按需读取 V2Board
+          当前套餐、最近公告、支付方式和站点设置。每次问题重新查询，不依赖旧快照。仅开放固定只读接口，不读取个人订单、余额、订阅或节点，也不能执行账户操作。
+        </p>
+        <label for="site-api-base">网站 API 地址</label>
+        <input
+          id="site-api-base"
+          type="url"
+          maxlength="2048"
+          placeholder="https://api.example.com/api/v1"
+        />
+        <label for="site-api-url">官网地址</label>
+        <input
+          id="site-api-url"
+          type="url"
+          maxlength="2048"
+          placeholder="https://example.com"
+        />
+        <label for="site-api-token">Authorization 令牌</label>
+        <input
+          id="site-api-token"
+          type="password"
+          autocomplete="off"
+          maxlength="8192"
+          placeholder="普通专用账号令牌；已保存时留空保留"
+        />
+        <p class="kc-muted" id="site-api-token-state">
+          令牌仅保存在服务器，不交给模型或访客。建议使用专用普通账号，不要使用管理员令牌；该账号可能具有写权限，本服务仅允许固定查询。更换
+          API 地址需重新填写令牌。
+        </p>
+        <label
+          ><input id="site-api-enabled" type="checkbox" /> 开启 AI
+          网站实时查询</label
+        >
+        <div class="kc-actions">
+          <button type="button" id="save-site-api" class="kc-button">
+            保存网站查询
+          </button>
+          <button type="button" id="test-site-api" class="kc-button">
+            测试已保存接口
+          </button>
+        </div>
+        <p
+          class="kc-message"
+          id="site-api-status"
+          role="status"
+          aria-live="polite"
+        >
+          尚未配置网站查询
+        </p>
+      </div>
       <div id="knowledge-source">
         <h3>文档自动同步</h3>
         <p class="kc-muted">

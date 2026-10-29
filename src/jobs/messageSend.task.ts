@@ -1,5 +1,10 @@
+import { siteAPISettings } from "@/services/site-api-runtime.service";
+import { completeWithSiteTools } from "@/services/site-tools.service";
 import { getAIProvider } from "@/services/openai.service";
-import { AI_REPLY_FORMAT_GUIDE, normalizeCrispReply } from "@/utils/message-format";
+import {
+  AI_REPLY_FORMAT_GUIDE,
+  normalizeCrispReply,
+} from "@/utils/message-format";
 import type { AIConfig } from "@/services/ai-config.service";
 import { getKnowledgeContext } from "@/services/knowledge-runtime.service";
 import { withKnowledgeContext } from "@/services/knowledge-context.service";
@@ -292,13 +297,13 @@ async function handleKeywordReply(
 async function handleAIReply(session: Session, body: any, project: any) {
   const provider = getAIProvider();
   const messages = await buildMessages(session, body, project, provider);
-  const { client, model } = provider;
-  const completion = await client.chat.completions.create({
+  const reply = await completeWithSiteTools({
     messages,
-    model,
+    model: provider.model,
+    config: await siteAPISettings.load(project.id),
+    complete: (input) => provider.client.chat.completions.create(input),
   });
 
-  const reply = completion.choices[0]?.message;
   if (!reply?.content) return;
 
   const content = normalizeCrispReply(reply.content);
@@ -375,15 +380,13 @@ async function handleImageMessage(
 
   const provider = getAIProvider();
   const messages = await buildMessages(session, body, project, provider);
-  const { client, model } = provider;
-  const completion = await client.chat.completions.create({
+  const reply = await completeWithSiteTools({
     messages,
-    model,
+    model: provider.model,
+    config: await siteAPISettings.load(project.id),
+    complete: (input) => provider.client.chat.completions.create(input),
   });
 
-  if (!completion?.choices) return;
-
-  const reply = completion.choices[0]?.message;
   const replyText = normalizeCrispReply(reply?.content ?? "无法识别该图片");
   if (reply) session.thread.push({ ...reply, content: replyText });
   await crisp.sendMessage(

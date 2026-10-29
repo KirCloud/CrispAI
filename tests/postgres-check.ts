@@ -1,3 +1,5 @@
+import { createSiteAPIRoutes } from "../src/api/site-api.controller";
+import { siteAPISettings } from "../src/services/site-api-runtime.service";
 // Run only against a disposable database whose name ends in _test.
 import assert from "node:assert/strict";
 import * as db from "../src/services/db.service";
@@ -50,6 +52,10 @@ const app = new Hono();
 app.route("/", createConsoleRoutes(auth));
 app.use("/api/v1/*", auth.middleware);
 app.route("/api/v1/settings/ai", createAISettingsRoutes(manager));
+app.route(
+  "/api/v1/site-api",
+  createSiteAPIRoutes(siteAPISettings, db.getProjectById),
+);
 mountOriginalConsole(app, auth);
 assert.equal((await app.request(origin + "/api/v1/settings/ai")).status, 401);
 const login = await app.request(origin + "/api/auth/login", {
@@ -105,6 +111,35 @@ const sql = db.default;
 const project = crypto.randomUUID();
 await sql`insert into project (id, name) values (${project}, 'Disposable integration test')`;
 try {
+  assert.equal(
+    (await app.request(origin + "/api/v1/site-api?project_id=" + project))
+      .status,
+    401,
+  );
+  const siteSettings = await app.request(
+    origin + "/api/v1/site-api?project_id=" + project,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: "Basic " + btoa("integration:integration-only"),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        apiBaseUrl: "https://api.example/api/v1",
+        siteUrl: "https://site.example",
+        authorization: "test-site-secret",
+        enabled: true,
+      }),
+    },
+  );
+  assert.equal(siteSettings.status, 200);
+  assert(!(await siteSettings.text()).includes("test-site-secret"));
+  assert.equal(
+    (await siteAPISettings.load(project))?.authorization,
+    "test-site-secret",
+  );
+  assert.equal(await siteAPISettings.load(crypto.randomUUID()), null);
+  console.log("POSTGRES_PROJECT_SITE_SETTINGS_PERSISTENCE_AND_AUTH_PASSED");
   const first = {
     key: "v2board:1:0",
     name: "Tutorial",
@@ -154,6 +189,7 @@ try {
     2,
   );
 } finally {
+  await sql`delete from app_setting where key = ${"site_api:" + project}`;
   await sql`delete from project where id = ${project}`;
   await sql.close();
 }

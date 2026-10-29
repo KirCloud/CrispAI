@@ -192,3 +192,14 @@ KirCloud 扩展部分 Copyright (C) 2026 KirCloud，同样以 AGPL-3.0 授权。
 需要在闭源产品里使用、或者不方便遵守 AGPL 的，可以联系作者获取商业授权。
 
 Crisp 是 Crisp IM SAS 的商标，本项目是独立的第三方集成，与 Crisp 官方无关。
+
+
+### 网站实时查询（V2Board）
+
+在项目原有的「AI 配置」页填写「网站实时查询」：HTTPS API 基址（以 `/api/v1` 结尾）、官网地址和普通专用账号的 Authorization 令牌，然后保存、测试并开启。它与文档同步独立：教程继续按计划同步，套餐和公告等由支持 OpenAI 工具调用的对话模型按需实时查询。无需向量模型。
+
+固定工具 `get_site_information` 仅接受 `plans`、`notices`、`payments`、`site_config` 四个主题。读取的接口为 `/user/plan/fetch`、`/user/notice/fetch?current=1&pageSize=10`、`/user/order/getPaymentMethod`、`/user/comm/config` 和 `/guest/comm/config`。套餐金额和固定手续费从分换算为主货币单位；缺失价格不等于免费。只返回允许的字段，不返回支付密钥、账号余额或订阅凭据。
+
+每条消息最多两轮工具调用、四次查询请求；同一主题仅在当前消息内复用，下一条消息重新读取。工具输出使用 `tool` 角色，仅为低信任参考，不写入会话历史。失败时返回固定错误，不回显令牌或上游响应，也不把历史价格当实时结果。模型仍可能选错查询或误读资料，不能保证消除提示词注入；该集成不提供通用 HTTP、订单、节点、余额、订阅或写操作工具。
+
+授权令牌保存在服务器的项目设置中，浏览器只读取“已保存”状态。空白保留已有令牌，更改 API 基址时必须重新填写。普通账号在 V2Board 本身仍可能有写权限，应专用并定期撤销不再使用的会话；本服务的限制来自固定路径与参数白名单。不要填写管理员令牌。管理接口 `GET/PUT /api/v1/site-api?project_id=...`、`POST /api/v1/site-api/test?project_id=...` 受后台认证保护。测试按钮只测试数据接口，不替代模型工具调用能力测试。

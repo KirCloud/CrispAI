@@ -1,3 +1,5 @@
+import { createSiteAPIRoutes } from "@/api/site-api.controller";
+import { siteAPISettings } from "@/services/site-api-runtime.service";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import z from "zod";
@@ -46,6 +48,7 @@ api.post(
 );
 
 api.use("*", authMiddleware);
+api.route("/site-api", createSiteAPIRoutes(siteAPISettings, db.getProjectById));
 api.route("/settings/ai", createAISettingsRoutes(aiConfig));
 api.route(
   "/knowledge/source",
