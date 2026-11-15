@@ -1,3 +1,4 @@
+import { resolveAbuseState } from "@/services/abuse-runtime.service";
 import { withConversationLock } from "@/services/conversation-lock.service";
 import * as crisp from "@/services/crisp.service";
 import * as db from "@/services/db.service";
@@ -44,8 +45,10 @@ async function processOption(job: any) {
   const isPicker = content.id ? true : false;
   if (!isPicker) return createResponse(false, "跳过非选项消息");
 
-  const state = await db.getSession(cleanSessionId);
-  if (state?.abuse_ended_at) return createResponse(true, "智能会话已结束");
+  const state = await resolveAbuseState(website_id, session_id, () =>
+    crisp.getVisitorEmail(website_id, session_id),
+  );
+  if (state.blocked) return createResponse(true, "智能会话已结束");
   await crisp.composeMessage(website_id, session_id, true);
   const project = await db.getProject(website_id);
   if (!project) return createResponse(false, "项目不存在");

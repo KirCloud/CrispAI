@@ -82,7 +82,7 @@ export const changeAI = (
   const text = bool
     ? "暂时关闭 AI 回复"
     : ended
-      ? "重新开启 AI（清除警告）"
+      ? "解除冷却并开启 AI（清零）"
       : "开启 AI 回复";
   const callback_data = bool
     ? `close_${groupId}_${topicId}`

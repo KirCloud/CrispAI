@@ -178,6 +178,7 @@ try {
     option.queue.close(),
   ]);
   await connection.quit();
+  await db.default`delete from abuse_identity where website_id=${project}`;
   await db.default.close();
 }
 process.exit(0);

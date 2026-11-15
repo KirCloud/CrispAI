@@ -19,7 +19,7 @@ export async function mountAbusePolicy(section, projectId, request, onDirty) {
       loaded = true;
       button.textContent = "保存警告设置";
       status.textContent = data.enabled
-        ? "已开启：累计第三次警告后结束本次 AI 会话。"
+        ? "已开启：累计第三次警告后静默冷却 1 小时。"
         : "尚未开启辱骂警告。";
       onDirty(false);
     } catch (error) {
@@ -47,8 +47,8 @@ export async function mountAbusePolicy(section, projectId, request, onDirty) {
       });
       enabled.checked = data.enabled;
       status.textContent = data.enabled
-        ? "已保存并开启，累计第三次警告后结束本次 AI 会话。"
-        : "已保存并关闭；此前结束的会话仍需人工重新开启。";
+        ? "已保存并开启，累计第三次警告后静默冷却 1 小时。"
+        : "已保存并关闭；已有冷却保留到到期或人工解除。";
       onDirty(false);
     } catch (error) {
       status.textContent = `保存失败：${error.message}`;

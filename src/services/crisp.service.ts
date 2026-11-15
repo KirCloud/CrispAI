@@ -1,3 +1,10 @@
+import { createAutomatedDeliveryGate } from "@/services/abuse-identity.service";
+import {
+  resolveAbuseState,
+  withAbuseIdentityLock,
+  identityBlocked,
+  mayDeliverWarning,
+} from "@/services/abuse-runtime.service";
 import * as db from "@/services/db.service";
 import axios from "axios";
 import type { Context } from "hono";
@@ -36,6 +43,24 @@ crisp.interceptors.response.use(
   },
 );
 
+export const getVisitorEmail = async (website: string, session: string) => {
+  const response = await crisp.get(
+    `/website/${website}/conversation/${session}/meta`,
+  );
+  return response.data?.data?.email;
+};
+const deliverAutomated = createAutomatedDeliveryGate({
+  identity: async (website, session) =>
+    (
+      await resolveAbuseState(website, session, () =>
+        getVisitorEmail(website, session),
+      )
+    ).identity,
+  lock: withAbuseIdentityLock,
+  blocked: identityBlocked,
+  warningAllowed: (website, session, key) =>
+    mayDeliverWarning(website, session.replace(/^session_/, ""), key),
+});
 type MessageBuffer = {
   messages: any[];
   timer: NodeJS.Timeout | null;
@@ -99,7 +124,10 @@ export const bufferMessage = async (data: any) => {
 
       if (session) {
         // ✅ session 已建好 → flush 剩下的消息
-        flushBuffer(cleanSessionId, "Session ready, flushing remaining messages");
+        flushBuffer(
+          cleanSessionId,
+          "Session ready, flushing remaining messages",
+        );
         return;
       }
 
@@ -123,7 +151,10 @@ export const bufferMessage = async (data: any) => {
           sessionId: cleanSessionId,
           waitedMs: buf.ticks * INTERVAL,
         });
-        flushBuffer(cleanSessionId, "Session wait timeout, flushing remaining messages");
+        flushBuffer(
+          cleanSessionId,
+          "Session wait timeout, flushing remaining messages",
+        );
       }
     } catch (error) {
       // 查询失败（网络抖动、数据库短暂不可用）只记录日志，下一轮继续
@@ -132,7 +163,10 @@ export const bufferMessage = async (data: any) => {
         message: error instanceof Error ? error.message : String(error),
       });
       if (buf.ticks >= MAX_TICKS) {
-        flushBuffer(cleanSessionId, "Session check kept failing, flushing remaining messages");
+        flushBuffer(
+          cleanSessionId,
+          "Session check kept failing, flushing remaining messages",
+        );
       }
     }
   }, INTERVAL);
@@ -172,7 +206,7 @@ export const getMetas = async (website_id: string, session_id: string) => {
     const {
       data: { data },
     } = await crisp.get(
-      `/website/${website_id}/conversation/${session_id}/meta`
+      `/website/${website_id}/conversation/${session_id}/meta`,
     );
     const flow = [];
     if (data.nickname)
@@ -182,7 +216,7 @@ export const getMetas = async (website_id: string, session_id: string) => {
       if (data.device.geolocation && data.device.geolocation.country) {
         flow.push("");
         flow.push(
-          `📍<b>地理位置</b>：${data.device.geolocation.country} ${data.device.geolocation.city}`
+          `📍<b>地理位置</b>：${data.device.geolocation.country} ${data.device.geolocation.city}`,
         );
       }
       const system = data.device.system;
@@ -210,7 +244,7 @@ export const listPages = async (website_id: string, session_id: string) => {
     const {
       data: { data },
     } = await crisp.get(
-      `/website/${website_id}/conversation/${session_id}/pages/1`
+      `/website/${website_id}/conversation/${session_id}/pages/1`,
     );
     const flow = [];
     if (data && data.length > 0) {
@@ -221,11 +255,11 @@ export const listPages = async (website_id: string, session_id: string) => {
         flow.push(
           `${i === 0 ? "<blockquote expandable>" : ""}<a href="${
             page.page_url
-          }">${page.page_url}</a>`
+          }">${page.page_url}</a>`,
         );
         if (page.page_referrer) {
           flow.push(
-            `来源：<a href="${page.page_referrer}">${page.page_referrer}</a>`
+            `来源：<a href="${page.page_referrer}">${page.page_referrer}</a>`,
           );
         }
         if (i === data.length - 1) flow.push("</blockquote>");
@@ -240,56 +274,64 @@ export const listPages = async (website_id: string, session_id: string) => {
 export const composeMessage = async (
   website_id: string,
   session_id: string,
-  action: boolean
+  action: boolean,
 ) => {
-  try {
+  const send = async () => {
     await crisp.patch(
       `/website/${website_id}/conversation/${session_id}/compose`,
       {
         type: action ? "start" : "stop",
         from: "operator",
-      }
+      },
     );
+  };
+  try {
+    if (action) return await deliverAutomated(website_id, session_id, send);
+    await send();
+    return true;
   } catch {
     return false;
   }
-  return true;
 };
 export const sendMessage = async (
   website_id: string,
   session_id: string,
   message: string,
   botName: string,
-  botURL: string
+  botURL: string,
+  options: { human?: boolean; warningKey?: string } = {},
 ) => {
-  try {
-    await crisp.post(
-      `/website/${website_id}/conversation/${session_id}/message`,
-      {
-        type: "text",
-        content: message,
-        from: "operator",
-        origin: Bun.env.CRISP_URN ?? "chat",
-        user: {
-          type: "website",
-          nickname: botName ?? "智能客服",
-          avatar: botURL ?? "https://img.icons8.com/officel/80/bot.png",
+  return deliverAutomated(
+    website_id,
+    session_id,
+    async () => {
+      await crisp.post(
+        `/website/${website_id}/conversation/${session_id}/message`,
+        {
+          type: "text",
+          content: message,
+          from: "operator",
+          origin: Bun.env.CRISP_URN ?? "chat",
+          user: {
+            type: "website",
+            nickname: botName ?? "智能客服",
+            avatar: botURL ?? "https://img.icons8.com/officel/80/bot.png",
+          },
         },
-      }
-    );
-    return true;
-  } catch (error) {
-    throw error;
-  }
+      );
+    },
+    options,
+  );
 };
+
 export const sendOption = async (
   website_id: string,
   session_id: string,
   option: any,
   botName: string,
-  botURL: string
+  botURL: string,
 ) => {
-  try {
+  return deliverAutomated(website_id, session_id, async () => {
     await crisp.post(
       `/website/${website_id}/conversation/${session_id}/message`,
       {
@@ -312,12 +354,9 @@ export const sendOption = async (
           nickname: botName ?? "智能客服",
           avatar: botURL ?? "https://img.icons8.com/officel/80/bot.png",
         },
-      }
+      },
     );
-    return true;
-  } catch (error) {
-    throw error;
-  }
+  });
 };
 
 export const checkSession = async (website_id: string, session_id: string) => {
@@ -335,7 +374,7 @@ export const getMessages = async (website_id: string, session_id: string) => {
     const {
       data: { data },
     } = await crisp.get(
-      `/website/${website_id}/conversation/${session_id}/messages`
+      `/website/${website_id}/conversation/${session_id}/messages`,
     );
     return data;
   } catch (error) {

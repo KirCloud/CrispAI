@@ -1,3 +1,4 @@
+import { resolveAbuseState } from "@/services/abuse-runtime.service";
 import { withConversationLock } from "@/services/conversation-lock.service";
 import * as db from "@/services/db.service";
 import * as crisp from "@/services/crisp.service";
@@ -40,8 +41,10 @@ async function processIntro(job: any) {
   const project = await db.getProject(website_id);
   if (!project) return createResponse(false, "未找到项目");
 
-  const state = await db.getSession(session_id.replace(/^session_/, ""));
-  if (state?.abuse_ended_at) return createResponse(true, "智能会话已结束");
+  const state = await resolveAbuseState(website_id, session_id, () =>
+    crisp.getVisitorEmail(website_id, session_id),
+  );
+  if (state.blocked) return createResponse(true, "智能会话已结束");
   const data = await crisp.getMessages(website_id, session_id);
   if (data.length > 0) {
     const message = data[data.length - 1];

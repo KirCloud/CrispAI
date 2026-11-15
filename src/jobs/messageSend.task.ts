@@ -5,6 +5,8 @@ import {
 import {
   classifyDirectedAbuse,
   readAbusePolicy,
+  resolveAbuseState,
+  reserveRuntimeWarning,
 } from "@/services/abuse-runtime.service";
 import { withConversationLock } from "@/services/conversation-lock.service";
 import { siteAPISettings } from "@/services/site-api-runtime.service";
@@ -74,6 +76,10 @@ async function processVisitorMessage(job: any) {
     return createResponse(false, "未找到项目");
   }
 
+  const recipient = await resolveAbuseState(website_id, session_id, () =>
+    crisp.getVisitorEmail(website_id, session_id),
+  );
+  if (recipient.blocked) return createResponse(true, "冷却中，静默忽略");
   let session = await db.getSession(cleanSessionId);
 
   if (session) {
@@ -82,7 +88,10 @@ async function processVisitorMessage(job: any) {
       session = null;
     }
   }
-  if (!session) {
+  if (
+    !session ||
+    (project.telegramId && (!session.topic_id || !session.message_id))
+  ) {
     session = await createTelegramSession(cleanSessionId, website_id, project);
   }
 
@@ -244,30 +253,36 @@ async function handleTextMessage(
   options: any[],
   jobId: string,
 ) {
+  const state = await resolveAbuseState(body.website_id, body.session_id, () =>
+    crisp.getVisitorEmail(body.website_id, body.session_id),
+  );
+  Object.assign(session, state.session);
+  const messageKey = abuseMessageKey(body, jobId);
   const guard = createAbuseGuard({
     enabled: async (id) => (await readAbusePolicy(id)).enabled,
     existing: db.getAbuseWarning,
     pending: db.pendingAbuseWarnings,
-    reserve: db.reserveAbuseWarning,
+    reserve: reserveRuntimeWarning,
     delivered: db.markAbuseWarningDelivered,
     classify: classifyDirectedAbuse,
-    send: (text) =>
+    send: (text, warningKey) =>
       crisp.sendMessage(
         body.website_id,
         body.session_id,
         text,
         project.botName,
         project.botIcon,
+        { warningKey },
       ),
   });
   const decision = await guard({
     project: project.id,
     website: body.website_id,
     session: session.session_id,
-    messageKey: abuseMessageKey(body, jobId),
+    messageKey,
     content: body.content,
     aiActive: Boolean(project.enableAI && session.enable_reply),
-    ended: Boolean(session.abuse_ended_at),
+    ended: state.blocked,
   });
   if (decision.handled) {
     if (
@@ -362,6 +377,14 @@ async function handleKeywordReply(
   }
 }
 async function handleAIReply(session: Session, body: any, project: any) {
+  if (
+    (
+      await resolveAbuseState(body.website_id, body.session_id, () =>
+        crisp.getVisitorEmail(body.website_id, body.session_id),
+      )
+    ).blocked
+  )
+    return;
   const provider = getAIProvider();
   const messages = await buildMessages(session, body, project, provider);
   const reply = await completeWithSiteTools({
@@ -374,9 +397,7 @@ async function handleAIReply(session: Session, body: any, project: any) {
   if (!reply?.content) return;
 
   const content = normalizeCrispReply(reply.content);
-  session.thread.push({ ...reply, content });
-
-  await crisp.sendMessage(
+  const sent = await crisp.sendMessage(
     body.website_id,
     body.session_id,
     content,
@@ -384,6 +405,8 @@ async function handleAIReply(session: Session, body: any, project: any) {
     project.botIcon,
   );
 
+  if (!sent) return;
+  session.thread.push({ ...reply, content });
   return content;
 }
 
@@ -461,8 +484,7 @@ async function handleImageMessage(
   });
 
   const replyText = normalizeCrispReply(reply?.content ?? "无法识别该图片");
-  if (reply) session.thread.push({ ...reply, content: replyText });
-  await crisp.sendMessage(
+  const sent = await crisp.sendMessage(
     body.website_id,
     body.session_id,
     replyText,
@@ -470,6 +492,8 @@ async function handleImageMessage(
     project.botIcon,
   );
 
+  if (!sent) return;
+  if (reply) session.thread.push({ ...reply, content: replyText });
   if (project.telegramId) {
     if (telegramMessage) {
       try {

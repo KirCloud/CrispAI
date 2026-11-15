@@ -31,8 +31,8 @@ export function abuseMessageKey(
 }
 export function abuseWarningText(count: number) {
   return count >= ABUSE_LIMIT
-    ? "第 3/3 次警告：请勿对客服进行人身辱骂或威胁。因已累计三次警告，本次智能客服会话已结束。如需处理业务问题，请通过工单联系人工客服。"
-    : `第 ${count}/3 次警告：请勿对客服进行人身辱骂或威胁。请文明描述你的问题，我们会继续协助；累计三次警告后将结束本次智能客服会话。`;
+    ? "第 3/3 次警告：请勿对客服进行人身辱骂或威胁。因已累计三次警告，智能客服已暂停回复 1 小时，冷却结束后可继续咨询。"
+    : `第 ${count}/3 次警告：请勿对客服进行人身辱骂或威胁。请文明描述你的问题，我们会继续协助；累计三次警告后将暂停智能客服回复 1 小时。`;
 }
 export type AbuseWarning = {
   message_key: string;
@@ -54,7 +54,7 @@ export function createAbuseGuard(deps: {
   ) => Promise<AbuseWarning | null>;
   delivered: (website: string, session: string, key: string) => Promise<void>;
   classify: (content: string) => Promise<boolean>;
-  send: (warning: string) => Promise<unknown>;
+  send: (warning: string, messageKey: string) => Promise<unknown>;
 }) {
   return async (input: {
     project: string;
@@ -68,10 +68,12 @@ export function createAbuseGuard(deps: {
     let lastReply: string | undefined;
     const send = async (warning: AbuseWarning) => {
       const text = abuseWarningText(warning.warning_number);
-      await deps.send(text);
+      const sent = await deps.send(text, warning.message_key);
+      if (sent === false) return;
       await deps.delivered(input.website, input.session, warning.message_key);
       lastReply = text;
     };
+    if (input.ended) return { handled: true };
     // A send failure must not erase the pending warning or consume another
     // strike on a webhook retry. Recover pending deliveries before any AI reply.
     for (const warning of await deps.pending(input.website, input.session))
@@ -81,7 +83,7 @@ export function createAbuseGuard(deps: {
       input.session,
       input.messageKey,
     );
-    if (previous || input.ended) return { handled: true, reply: lastReply };
+    if (previous) return { handled: true, reply: lastReply };
     if (!input.aiActive || !(await deps.enabled(input.project)))
       return { handled: false };
     let abusive = false;

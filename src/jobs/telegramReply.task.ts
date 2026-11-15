@@ -10,7 +10,7 @@ import { connection } from "@/services/redis.service";
 
 const currentFileName = path.basename(
   import.meta.url,
-  path.extname(import.meta.url)
+  path.extname(import.meta.url),
 );
 export default {
   name: currentFileName,
@@ -48,19 +48,20 @@ export default {
       await crisp.composeMessage(
         data.website_id,
         "session_" + data.session_id,
-        true
+        true,
       );
       await crisp.sendMessage(
         project.websiteId,
         "session_" + data.session_id,
         msg,
         project.botName,
-        project.botIcon
+        project.botIcon,
+        { human: true },
       );
       await crisp.composeMessage(
         data.website_id,
         "session_" + data.session_id,
-        false
+        false,
       );
 
       try {
@@ -72,7 +73,7 @@ export default {
               type: "emoji",
               emoji: "👌",
             },
-          ]
+          ],
         );
       } catch {}
     }
@@ -86,7 +87,7 @@ export default {
           data.message_id,
           {
             reply_markup: telegram.changeAI(group_id, topic_id, false),
-          }
+          },
         );
       } catch {}
     }
@@ -95,7 +96,7 @@ export default {
       await crisp.composeMessage(
         data.website_id,
         "session_" + data.session_id,
-        true
+        true,
       );
       const photo = job.data.photo.pop();
       if (!photo) {
@@ -109,12 +110,13 @@ export default {
         "session_" + data.session_id,
         markdownImage,
         project.botName,
-        project.botIcon
+        project.botIcon,
+        { human: true },
       );
       await crisp.composeMessage(
         data.website_id,
         "session_" + data.session_id,
-        false
+        false,
       );
       if (!msg) {
         try {
@@ -126,7 +128,7 @@ export default {
                 type: "emoji",
                 emoji: "👌",
               },
-            ]
+            ],
           );
         } catch {}
       }
@@ -140,7 +142,7 @@ export default {
       await crisp.composeMessage(
         data.website_id,
         "session_" + data.session_id,
-        true
+        true,
       );
       const sticker = job.data.sticker;
       if (!sticker) {
@@ -157,12 +159,13 @@ export default {
         "session_" + data.session_id,
         markdownImage,
         project.botName,
-        project.botIcon
+        project.botIcon,
+        { human: true },
       );
       await crisp.composeMessage(
         data.website_id,
         "session_" + data.session_id,
-        false
+        false,
       );
       if (!msg) {
         try {
@@ -174,7 +177,7 @@ export default {
                 type: "emoji",
                 emoji: "👌",
               },
-            ]
+            ],
           );
         } catch {}
       }
@@ -187,13 +190,13 @@ const uploadFile = async (fileId: string) => {
   const file = await telegram.default.api.getFile(fileId);
   const response = await axios.get<ArrayBuffer>(
     `https://api.telegram.org/file/bot${Bun.env.TELEGRAM_TOKEN}/${file.file_path}`,
-    { responseType: "arraybuffer" }
+    { responseType: "arraybuffer" },
   );
   // 带上原始扩展名（照片是 .jpg，贴纸是 .webp），对外提供时才能给出正确的 Content-Type
   const ext = path.extname(file.file_path ?? "") || ".jpg";
   const url = await storage.saveFile(
     fileId + ext,
-    new Uint8Array(response.data)
+    new Uint8Array(response.data),
   );
   return `![image](${url})`;
 };

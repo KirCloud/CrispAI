@@ -1,3 +1,9 @@
+import {
+  prepareAbuseIdentity,
+  reserveIdentityWarning,
+  mayDeliverWarning,
+} from "../src/services/abuse-state.service";
+import { abuseIdentityKey } from "../src/services/abuse-identity.service";
 import { createAbusePolicyRoutes } from "../src/api/abuse-policy.controller";
 import {
   readAbusePolicy,
@@ -237,7 +243,101 @@ try {
     );
   } finally {
     await db.deleteSessions([testSession]);
+    await sql`delete from abuse_identity where website_id=${project}`;
     await sql`delete from app_setting where key=${"abuse_policy:" + project}`;
+  }
+  const sameEmail = abuseIdentityKey(
+    project,
+    "first",
+    "user@example.com",
+    "test-secret",
+  );
+  const windows = [
+    crypto.randomUUID(),
+    crypto.randomUUID(),
+    crypto.randomUUID(),
+  ];
+  for (const session_id of windows)
+    await db.upsertSession({
+      website_id: project,
+      session_id,
+      enable_reply: true,
+      enable_time: new Date(),
+      thread: [],
+    });
+  try {
+    await prepareAbuseIdentity(project, windows[0]!, sameEmail);
+    await reserveIdentityWarning(project, windows[0]!, "email-one");
+    await db.markAbuseWarningDelivered(project, windows[0]!, "email-one");
+    assert.equal(
+      (await prepareAbuseIdentity(project, windows[1]!, sameEmail)).count,
+      1,
+    );
+    await reserveIdentityWarning(project, windows[1]!, "email-two");
+    await db.markAbuseWarningDelivered(project, windows[1]!, "email-two");
+    await prepareAbuseIdentity(project, windows[2]!, sameEmail);
+    await reserveIdentityWarning(project, windows[2]!, "email-three");
+    assert(await mayDeliverWarning(project, windows[2]!, "email-three"));
+    await db.markAbuseWarningDelivered(project, windows[2]!, "email-three");
+    assert(!(await mayDeliverWarning(project, windows[2]!, "email-three")));
+    const [[deadline]] = await Promise.all([
+      sql`select blocked_until from abuse_identity where website_id=${project} and identity_key=${sameEmail}`,
+    ]);
+    const originalDeadline = new Date(deadline.blocked_until).getTime();
+    assert(
+      originalDeadline > Date.now() + 3590_000 &&
+        originalDeadline <= Date.now() + 3600_000,
+    );
+    assert(
+      (await prepareAbuseIdentity(project, windows[0]!, sameEmail)).blocked,
+    );
+    assert(
+      (await prepareAbuseIdentity(project, windows[1]!, sameEmail)).blocked,
+    );
+    assert.equal(
+      new Date(
+        (
+          await sql`select blocked_until from abuse_identity where website_id=${project} and identity_key=${sameEmail}`
+        )[0].blocked_until,
+      ).getTime(),
+      originalDeadline,
+      "Blocked messages must not extend the hour",
+    );
+    await db.updateSession(windows[1]!, { enable_reply: false });
+    await sql`update abuse_identity set blocked_until=now()-interval '1 second' where website_id=${project} and identity_key=${sameEmail}`;
+    const reopened = await prepareAbuseIdentity(
+      project,
+      windows[0]!,
+      sameEmail,
+    );
+    assert(
+      !reopened.blocked &&
+        reopened.count === 0 &&
+        reopened.session.enable_reply,
+    );
+    assert.equal(reopened.session.abuse_ended_at, null);
+    assert.equal(
+      (await prepareAbuseIdentity(project, windows[1]!, sameEmail)).session
+        .enable_reply,
+      false,
+      "Preserve a human pause after cooldown expiry",
+    );
+    assert(!(await mayDeliverWarning(project, windows[2]!, "email-three")));
+    assert.equal(
+      (await db.pendingAbuseWarnings(project, windows[0]!)).length,
+      0,
+    );
+    assert.equal(
+      (await reserveIdentityWarning(project, windows[0]!, "after-hour"))
+        .warning_number,
+      1,
+    );
+    console.log(
+      "POSTGRES_EMAIL_CROSS_SESSION_FIXED_ONE_HOUR_EXPIRY_RESET_AND_NO_STALE_WARNING_PASSED",
+    );
+  } finally {
+    await db.deleteSessions(windows);
+    await sql`delete from abuse_identity where website_id=${project}`;
   }
   const first = {
     key: "v2board:1:0",

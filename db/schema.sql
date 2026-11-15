@@ -158,3 +158,23 @@ create table if not exists public.abuse_warning (
 );
 
 alter table public.abuse_warning add column if not exists cancelled_at timestamptz;
+
+-- One-hour email/session identity cooldown. Store keyed digests, never raw email.
+alter table public.session add column if not exists abuse_identity_key text;
+alter table public.session add column if not exists abuse_identity_generation bigint not null default 0;
+alter table public.session add column if not exists abuse_blocked_until timestamptz;
+alter table public.session add column if not exists abuse_disabled_by_policy boolean not null default false;
+update public.session set abuse_blocked_until=abuse_ended_at+interval '1 hour',abuse_disabled_by_policy=true
+  where abuse_ended_at is not null and abuse_blocked_until is null and abuse_identity_key is null;
+create table if not exists public.abuse_identity (
+  website_id text not null,
+  identity_key text not null,
+  warning_count integer not null default 0 check (warning_count between 0 and 3),
+  blocked_until timestamptz,
+  generation bigint not null default 0,
+  updated_at timestamptz not null default now(),
+  primary key (website_id,identity_key)
+);
+alter table public.abuse_warning add column if not exists identity_key text;
+alter table public.abuse_warning add column if not exists generation bigint not null default 0;
+create index if not exists abuse_warning_identity_idx on public.abuse_warning(website_id,identity_key,generation);

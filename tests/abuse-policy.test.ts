@@ -82,7 +82,7 @@ test("three distinct abusive messages receive numbered warnings and the third en
   expect(f.sent).toHaveLength(3);
   expect(f.sent[0]).toContain("1/3");
   expect(f.sent[1]).toContain("2/3");
-  expect(f.sent[2]).toContain("会话已结束");
+  expect(f.sent[2]).toContain("暂停回复 1 小时");
   expect((await f.run("four")).handled).toBe(true);
   expect((await f.run("polite-after", "hello")).handled).toBe(true);
   expect(f.sent).toHaveLength(3);
@@ -104,7 +104,7 @@ test("duplicate webhook deliveries and retries never consume a second strike", a
   expect(f.sent).toHaveLength(2);
   expect(f.sent[1]).toContain("2/3");
 });
-test("pending final warning is recovered even after the conversation is marked ended", async () => {
+test("after the third strike, even pending warnings remain silent", async () => {
   const f = fixture();
   await f.run("a");
   await f.run("b");
@@ -112,9 +112,8 @@ test("pending final warning is recovered even after the conversation is marked e
   await expect(f.run("c")).rejects.toThrow();
   expect(f.state().ended).toBe(true);
   f.failSend(false);
-  expect((await f.run("c", "abusive", false)).handled).toBe(true);
-  expect(f.sent).toHaveLength(3);
-  expect(f.sent[2]).toContain("3/3");
+  expect((await f.run("new", "abusive", false)).handled).toBe(true);
+  expect(f.sent).toHaveLength(2);
 });
 test("complaints, disabled AI, disabled policy and classifier failures do not add warnings", async () => {
   const f = fixture();
