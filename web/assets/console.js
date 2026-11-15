@@ -1,3 +1,4 @@
+import { mountAbusePolicy } from "./abuse-policy.js";
 import { mountSiteAPI } from "./site-api.js";
 
 const dirtyForms = new Set();
@@ -113,7 +114,7 @@ export function mountAIForm(form) {
   const setBusy = (value) => {
     busy = value;
     form.querySelectorAll("input,button,select").forEach((input) => {
-      if (!input.closest("#site-api")) input.disabled = value;
+      if (!input.closest("#site-api,#abuse-policy")) input.disabled = value;
     });
     save.textContent = value ? "处理中…" : "保存配置";
     syncEmbedding();
@@ -280,7 +281,7 @@ export function mountAIForm(form) {
   form.addEventListener("input", (event) => {
     if (
       loaded &&
-      !event.target.closest("#knowledge-source,#site-api") &&
+      !event.target.closest("#knowledge-source,#site-api,#abuse-policy") &&
       !["test-embedding", "reindex-all"].includes(event.target.id)
     ) {
       setDirty(true);
@@ -409,6 +410,11 @@ export function mountAIForm(form) {
         await refreshKnowledge().catch(() => {});
         setBusy(false);
       }
+    });
+    const abuseSection = $("#abuse-policy");
+    void mountAbusePolicy(abuseSection, projectId, request, (dirty) => {
+      if (dirty) dirtyForms.add(abuseSection);
+      else dirtyForms.delete(abuseSection);
     });
     const siteSection = $("#site-api");
     void mountSiteAPI(siteSection, projectId, request, (dirty) => {

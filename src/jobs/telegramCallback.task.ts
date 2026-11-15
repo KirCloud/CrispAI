@@ -1,3 +1,4 @@
+import { withConversationLock } from "@/services/conversation-lock.service";
 import * as db from "@/services/db.service";
 import * as telegram from "@/services/telegram.service";
 import { Queue } from "bullmq";
@@ -6,7 +7,7 @@ import { connection } from "@/services/redis.service";
 
 const currentFileName = path.basename(
   import.meta.url,
-  path.extname(import.meta.url)
+  path.extname(import.meta.url),
 );
 export default {
   name: currentFileName,
@@ -32,17 +33,26 @@ export default {
       const action = query[0] === "close" ? false : true;
       const group_id = parseInt(query[1]);
       const topic_id = parseInt(query[2]);
-      await db.setSessionReplyByTopic(group_id, topic_id, action);
+      const session = await db.getSessionByTopic(group_id, topic_id);
+      if (!session) return { success: false };
+      await withConversationLock(
+        connection,
+        session.website_id,
+        "session_" + session.session_id,
+        async () => {
+          await db.setSessionReplyByTopic(group_id, topic_id, action);
 
-      try {
-        await telegram.default.api.editMessageReplyMarkup(
-          group_id,
-          topic_id + 1,
-          {
-            reply_markup: telegram.changeAI(group_id, topic_id, action),
-          }
-        );
-      } catch {}
+          try {
+            await telegram.default.api.editMessageReplyMarkup(
+              group_id,
+              session.message_id!,
+              {
+                reply_markup: telegram.changeAI(group_id, topic_id, action),
+              },
+            );
+          } catch {}
+        },
+      );
     }
     return { success: true };
   },

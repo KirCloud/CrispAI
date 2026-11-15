@@ -88,9 +88,13 @@ export function createConsoleRoutes(auth = adminAuth) {
     const file = c.req.param("file");
     if (
       `/console-assets/${c.req.param("version")}` !== CONSOLE_ASSET_PREFIX ||
-      !["console.js", "site-api.js", "extension.js", "console.css"].includes(
-        file,
-      )
+      ![
+        "console.js",
+        "site-api.js",
+        "abuse-policy.js",
+        "extension.js",
+        "console.css",
+      ].includes(file)
     )
       return c.notFound();
     c.header("Cache-Control", "public, max-age=31536000, immutable");

@@ -170,27 +170,34 @@ export const updateSession = async (
 export const setSessionReply = async (session_id: string, enable: boolean) => {
   await sql`
     update session set enable_reply = ${enable}, enable_time = now()
-    where session_id = ${session_id} and enable_reply = ${!enable}`;
+    where session_id = ${session_id} and enable_reply = ${!enable}
+      and (${!enable} or abuse_ended_at is null)`;
 };
 export const setSessionReplyByTopic = async (
   group_id: number,
   topic_id: number,
   enable: boolean,
 ) => {
-  await sql`
-    update session set enable_reply = ${enable}, enable_time = now()
-    where group_id = ${group_id} and topic_id = ${topic_id}
-      and enable_reply = ${!enable}`;
+  await sql.begin(async (tx) => {
+    if (enable)
+      await tx`update abuse_warning set cancelled_at=now() where session_id in (select session_id from session where group_id=${group_id} and topic_id=${topic_id}) and delivered_at is null and cancelled_at is null`;
+    await tx`
+    update session set enable_reply = ${enable}, enable_time = now(),
+      abuse_warning_count = case when ${enable} then 0 else abuse_warning_count end,
+      abuse_ended_at = case when ${enable} then null else abuse_ended_at end
+    where group_id = ${group_id} and topic_id = ${topic_id}`;
+  });
 };
 export const listDisabledSessions = async (): Promise<any[]> => {
-  const rows = await sql`select * from session where enable_reply = false`;
+  const rows =
+    await sql`select * from session where enable_reply = false and abuse_ended_at is null`;
   return rows.map(toSession);
 };
 export const enableSessions = async (session_ids: string[]) => {
   if (session_ids.length === 0) return;
   await sql`
     update session set enable_reply = true, enable_time = now()
-    where session_id in ${sql(session_ids)}`;
+    where session_id in ${sql(session_ids)} and abuse_ended_at is null`;
 };
 export const deleteSessions = async (session_ids: string[]) => {
   if (session_ids.length === 0) return;
@@ -198,7 +205,7 @@ export const deleteSessions = async (session_ids: string[]) => {
 };
 export const deleteSessionsBefore = async (before: Date) => {
   const rows = await sql`
-    delete from session where enable_time < ${before} returning session_id`;
+    delete from session where enable_time < ${before} and abuse_ended_at is null returning session_id`;
   return rows.map((row: any) => row.session_id as string);
 };
 
@@ -419,3 +426,43 @@ export const listKnowledgeSources = async () => {
     config: row.value,
   }));
 };
+
+export const getAbuseWarning = async (
+  website: string,
+  session: string,
+  key: string,
+) => {
+  const [row] =
+    await sql`select message_key, warning_number, delivered_at from abuse_warning where website_id=${website} and session_id=${session} and message_key=${key}`;
+  return row ?? null;
+};
+export const pendingAbuseWarnings = async (website: string, session: string) =>
+  await sql`select message_key, warning_number, delivered_at from abuse_warning where website_id=${website} and session_id=${session} and delivered_at is null and cancelled_at is null order by created_at, warning_number`;
+export const markAbuseWarningDelivered = async (
+  website: string,
+  session: string,
+  key: string,
+) => {
+  await sql`update abuse_warning set delivered_at=now() where website_id=${website} and session_id=${session} and message_key=${key}`;
+};
+export const reserveAbuseWarning = async (
+  website: string,
+  session: string,
+  key: string,
+) =>
+  sql.begin(async (tx) => {
+    const [state] =
+      await tx`select abuse_warning_count, abuse_ended_at from session where session_id=${session} and website_id=${website} for update`;
+    if (!state) return null;
+    const [existing] =
+      await tx`select message_key,warning_number,delivered_at from abuse_warning where website_id=${website} and session_id=${session} and message_key=${key}`;
+    if (existing) return existing;
+    if (state.abuse_ended_at) return null;
+    const count = Math.min(3, Number(state.abuse_warning_count) + 1);
+    await tx`update session set abuse_warning_count=${count},abuse_ended_at=case when ${count} = 3 then now() else null end,
+    enable_reply=case when ${count} = 3 then false else enable_reply end,
+    enable_time=case when ${count} = 3 then now() else enable_time end where session_id=${session} and website_id=${website}`;
+    const [warning] =
+      await tx`insert into abuse_warning (website_id,session_id,message_key,warning_number) values (${website},${session},${key},${count}) returning message_key,warning_number,delivered_at`;
+    return warning;
+  });

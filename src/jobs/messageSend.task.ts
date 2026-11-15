@@ -1,3 +1,12 @@
+import {
+  createAbuseGuard,
+  abuseMessageKey,
+} from "@/services/abuse-policy.service";
+import {
+  classifyDirectedAbuse,
+  readAbusePolicy,
+} from "@/services/abuse-runtime.service";
+import { withConversationLock } from "@/services/conversation-lock.service";
 import { siteAPISettings } from "@/services/site-api-runtime.service";
 import { completeWithSiteTools } from "@/services/site-tools.service";
 import { getAIProvider } from "@/services/openai.service";
@@ -47,33 +56,38 @@ export default {
     },
   }),
   concurrency: 100,
-  processor: async (job: any) => {
-    const { session_id, website_id } = job.data;
-    const cleanSessionId = session_id.replace("session_", "");
+  processor: async (job: any) =>
+    withConversationLock(
+      connection,
+      job.data.website_id,
+      job.data.session_id,
+      () => processVisitorMessage(job),
+    ),
+};
 
-    const project = await db.getProject(website_id);
-    if (!project) {
-      return createResponse(false, "未找到项目");
+async function processVisitorMessage(job: any) {
+  const { session_id, website_id } = job.data;
+  const cleanSessionId = session_id.replace("session_", "");
+
+  const project = await db.getProject(website_id);
+  if (!project) {
+    return createResponse(false, "未找到项目");
+  }
+
+  let session = await db.getSession(cleanSessionId);
+
+  if (session) {
+    const error = await updateTelegramSession(session, project);
+    if (error) {
+      session = null;
     }
+  }
+  if (!session) {
+    session = await createTelegramSession(cleanSessionId, website_id, project);
+  }
 
-    let session = await db.getSession(cleanSessionId);
-
-    if (session) {
-      const error = await updateTelegramSession(session, project);
-      if (error) {
-        session = null;
-      }
-    }
-    if (!session) {
-      session = await createTelegramSession(
-        cleanSessionId,
-        website_id,
-        project,
-      );
-    }
-
-    await crisp.composeMessage(website_id, session_id, true);
-
+  await crisp.composeMessage(website_id, session_id, true);
+  try {
     const isText = job.data.type === "text";
 
     let telegramMessage;
@@ -148,6 +162,7 @@ export default {
         job.data,
         project,
         options,
+        String(job.id),
       );
       if (project.telegramId) {
         await notifyTelegram(
@@ -160,12 +175,13 @@ export default {
     } else if (job.data.content.type.includes("image")) {
       await handleImageMessage(session, job.data, project, telegramMessage);
     }
-    await crisp.composeMessage(website_id, session_id, false);
 
     await db.updateSession(cleanSessionId, { thread: session.thread });
-    return createResponse(true, "任务执行完成");
-  },
-};
+  } finally {
+    await crisp.composeMessage(website_id, session_id, false);
+  }
+  return createResponse(true, "任务执行完成");
+}
 
 async function updateTelegramSession(session: Session, project: any) {
   if (!project.telegramId) return null;
@@ -184,7 +200,8 @@ async function updateTelegramSession(session: Session, project: any) {
         reply_markup: telegram.changeAI(
           project.telegramId,
           session.topic_id!,
-          project.enableAI,
+          Boolean(session.enable_reply && !session.abuse_ended_at),
+          Boolean(session.abuse_ended_at),
         ),
       },
     );
@@ -225,7 +242,57 @@ async function handleTextMessage(
   body: any,
   project: any,
   options: any[],
+  jobId: string,
 ) {
+  const guard = createAbuseGuard({
+    enabled: async (id) => (await readAbusePolicy(id)).enabled,
+    existing: db.getAbuseWarning,
+    pending: db.pendingAbuseWarnings,
+    reserve: db.reserveAbuseWarning,
+    delivered: db.markAbuseWarningDelivered,
+    classify: classifyDirectedAbuse,
+    send: (text) =>
+      crisp.sendMessage(
+        body.website_id,
+        body.session_id,
+        text,
+        project.botName,
+        project.botIcon,
+      ),
+  });
+  const decision = await guard({
+    project: project.id,
+    website: body.website_id,
+    session: session.session_id,
+    messageKey: abuseMessageKey(body, jobId),
+    content: body.content,
+    aiActive: Boolean(project.enableAI && session.enable_reply),
+    ended: Boolean(session.abuse_ended_at),
+  });
+  if (decision.handled) {
+    if (
+      decision.ended &&
+      session.group_id &&
+      session.message_id &&
+      session.topic_id
+    ) {
+      try {
+        await telegram.default.api.editMessageReplyMarkup(
+          session.group_id,
+          session.message_id,
+          {
+            reply_markup: telegram.changeAI(
+              session.group_id,
+              session.topic_id,
+              false,
+              true,
+            ),
+          },
+        );
+      } catch {}
+    }
+    return decision.reply;
+  }
   let content: string | undefined;
 
   if (project.enableKeyword) {
@@ -376,7 +443,13 @@ async function handleImageMessage(
   project: any,
   telegramMessage?: Message.TextMessage | Message.PhotoMessage,
 ) {
-  if (!project.enableAI || !project.enableAIPic) return;
+  if (
+    !project.enableAI ||
+    !project.enableAIPic ||
+    session.abuse_ended_at ||
+    !session.enable_reply
+  )
+    return;
 
   const provider = getAIProvider();
   const messages = await buildMessages(session, body, project, provider);

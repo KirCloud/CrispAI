@@ -1,3 +1,8 @@
+import { createAbusePolicyRoutes } from "../src/api/abuse-policy.controller";
+import {
+  readAbusePolicy,
+  saveAbusePolicy,
+} from "../src/services/abuse-runtime.service";
 import { createSiteAPIRoutes } from "../src/api/site-api.controller";
 import { siteAPISettings } from "../src/services/site-api-runtime.service";
 // Run only against a disposable database whose name ends in _test.
@@ -55,6 +60,14 @@ app.route("/api/v1/settings/ai", createAISettingsRoutes(manager));
 app.route(
   "/api/v1/site-api",
   createSiteAPIRoutes(siteAPISettings, db.getProjectById),
+);
+app.route(
+  "/api/v1/settings/abuse",
+  createAbusePolicyRoutes({
+    exists: db.getProjectById,
+    read: readAbusePolicy,
+    save: saveAbusePolicy,
+  }),
 );
 mountOriginalConsole(app, auth);
 assert.equal((await app.request(origin + "/api/v1/settings/ai")).status, 401);
@@ -140,6 +153,92 @@ try {
   );
   assert.equal(await siteAPISettings.load(crypto.randomUUID()), null);
   console.log("POSTGRES_PROJECT_SITE_SETTINGS_PERSISTENCE_AND_AUTH_PASSED");
+  const testSession = crypto.randomUUID();
+  await db.upsertSession({
+    website_id: project,
+    session_id: testSession,
+    group_id: -9988776655,
+    topic_id: 445566,
+    enable_reply: true,
+    enable_time: new Date(),
+    thread: [],
+  });
+  try {
+    const firstWarning = await db.reserveAbuseWarning(
+      project,
+      testSession,
+      "one",
+    );
+    assert.equal(firstWarning.warning_number, 1);
+    await db.markAbuseWarningDelivered(project, testSession, "one");
+    assert.equal(
+      (await db.reserveAbuseWarning(project, testSession, "one"))
+        .warning_number,
+      1,
+    );
+    const parallel = await Promise.all(
+      ["two", "three", "four"].map((key) =>
+        db.reserveAbuseWarning(project, testSession, key),
+      ),
+    );
+    assert.deepEqual(
+      parallel
+        .filter(Boolean)
+        .map((r) => r.warning_number)
+        .sort(),
+      [2, 3],
+    );
+    assert.equal((await db.getSession(testSession)).abuse_warning_count, 3);
+    assert((await db.getSession(testSession)).abuse_ended_at);
+    assert.equal((await db.getSession(testSession)).enable_reply, false);
+    assert.equal(
+      await db.getAbuseWarning("another-website", testSession, "one"),
+      null,
+    );
+    await db.enableSessions([testSession]);
+    await db.setSessionReply(testSession, true);
+    assert.equal((await db.getSession(testSession)).enable_reply, false);
+    assert(
+      !(await db.listDisabledSessions()).some(
+        (s) => s.session_id === testSession,
+      ),
+    );
+    await sql`update session set enable_time=now()-interval '60 days' where session_id=${testSession}`;
+    assert(!(await db.deleteSessionsBefore(new Date())).includes(testSession));
+    await db.setSessionReplyByTopic(-9988776655, 445566, true);
+    assert.equal((await db.getSession(testSession)).abuse_warning_count, 0);
+    assert.equal((await db.getSession(testSession)).abuse_ended_at, null);
+    assert.equal((await db.getSession(testSession)).enable_reply, true);
+    assert.equal(
+      (await db.pendingAbuseWarnings(project, testSession)).length,
+      0,
+    );
+    assert.equal(
+      (await db.reserveAbuseWarning(project, testSession, "after-human-reset"))
+        .warning_number,
+      1,
+    );
+    await db.migrate(1);
+    assert.equal((await db.getSession(testSession)).abuse_warning_count, 1);
+    const abusePath = origin + "/api/v1/settings/abuse?project_id=" + project;
+    assert.equal((await app.request(abusePath)).status, 401);
+    const savedAbuse = await app.request(abusePath, {
+      method: "PUT",
+      headers: {
+        Authorization: "Basic " + btoa("integration:integration-only"),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ enabled: true }),
+    });
+    assert.equal(savedAbuse.status, 200);
+    assert.equal((await readAbusePolicy(project)).enabled, true);
+    console.log(
+      "POSTGRES_ABUSE_COUNTER_CONCURRENCY_DEDUP_CUTOFF_TIMER_RESET_AND_POLICY_PERSISTENCE_PASSED",
+    );
+  } finally {
+    await db.deleteSessions([testSession]);
+    await sql`delete from app_setting where key=${"abuse_policy:" + project}`;
+  }
   const first = {
     key: "v2board:1:0",
     name: "Tutorial",

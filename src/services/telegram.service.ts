@@ -32,7 +32,7 @@ bot.command("ping", async (ctx) => {
 
     const admins = await ctx.api.getChatAdministrators(ctx.chat.id);
     const me = admins.find(
-      (admin) => admin.user.id === ctx.me.id
+      (admin) => admin.user.id === ctx.me.id,
     ) as ChatMemberAdministrator;
     if (!me || !me.can_manage_topics) {
       await ctx.reply("请将管理话题权限赋予我");
@@ -47,7 +47,11 @@ bot.command("ping", async (ctx) => {
 });
 bot.on("callback_query:data", async (ctx) => {
   // 先入队再应答：应答失败（例如按钮点击已过期）不影响任务执行
-  enqueue(telegramCallbackTask.queue, "telegramCallback", ctx.callbackQuery.data);
+  enqueue(
+    telegramCallbackTask.queue,
+    "telegramCallback",
+    ctx.callbackQuery.data,
+  );
   try {
     await ctx.answerCallbackQuery();
   } catch (error) {
@@ -69,8 +73,17 @@ bot.on("msg:sticker", async (ctx) => {
   enqueue(telegramReplyTask.queue, "telegramReply", ctx.message);
 });
 
-export const changeAI = (groupId: number, topicId: number, bool: boolean) => {
-  const text = bool ? "暂时关闭 AI 回复" : "开启 AI 回复";
+export const changeAI = (
+  groupId: number,
+  topicId: number,
+  bool: boolean,
+  ended = false,
+) => {
+  const text = bool
+    ? "暂时关闭 AI 回复"
+    : ended
+      ? "重新开启 AI（清除警告）"
+      : "开启 AI 回复";
   const callback_data = bool
     ? `close_${groupId}_${topicId}`
     : `open_${groupId}_${topicId}`;
@@ -114,7 +127,7 @@ export const setupWebhook = async () => {
         { drop_pending_updates: true, secret_token: WEBHOOK_SECRET },
         // grammY 的类型声明用的是 abort-controller 包里的 AbortSignal，
         // 与运行时的标准 AbortSignal 只是类型不兼容，实际可以直接使用
-        AbortSignal.timeout(WEBHOOK_TIMEOUT) as any
+        AbortSignal.timeout(WEBHOOK_TIMEOUT) as any,
       );
       logger.info("Telegram Webhook 设置成功");
       return;
@@ -123,7 +136,7 @@ export const setupWebhook = async () => {
         `设置 Telegram Webhook 失败（第 ${attempt} 次），${
           WEBHOOK_RETRY_DELAY / 1000
         } 秒后重试:`,
-        error
+        error,
       );
       await Bun.sleep(WEBHOOK_RETRY_DELAY);
     }

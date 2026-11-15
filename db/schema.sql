@@ -140,3 +140,21 @@ as $$
   order by p.vector <=> query_embedding
   limit match_count;
 $$;
+
+
+-- AI conversation guard. Counter updates and message receipts are committed
+-- together; retries of one Crisp fingerprint never consume another warning.
+alter table public.session add column if not exists abuse_warning_count integer not null default 0 check (abuse_warning_count between 0 and 3);
+alter table public.session add column if not exists abuse_ended_at timestamptz;
+create table if not exists public.abuse_warning (
+  website_id text not null,
+  session_id text not null references public.session(session_id) on delete cascade,
+  message_key text not null,
+  warning_number integer not null check (warning_number between 1 and 3),
+  delivered_at timestamptz,
+  cancelled_at timestamptz,
+  created_at timestamptz not null default now(),
+  primary key (website_id, session_id, message_key)
+);
+
+alter table public.abuse_warning add column if not exists cancelled_at timestamptz;

@@ -1,3 +1,8 @@
+import { createAbusePolicyRoutes } from "@/api/abuse-policy.controller";
+import {
+  readAbusePolicy,
+  saveAbusePolicy,
+} from "@/services/abuse-runtime.service";
 import { createSiteAPIRoutes } from "@/api/site-api.controller";
 import { siteAPISettings } from "@/services/site-api-runtime.service";
 import { Hono } from "hono";
@@ -48,6 +53,14 @@ api.post(
 );
 
 api.use("*", authMiddleware);
+api.route(
+  "/settings/abuse",
+  createAbusePolicyRoutes({
+    exists: db.getProjectById,
+    read: readAbusePolicy,
+    save: saveAbusePolicy,
+  }),
+);
 api.route("/site-api", createSiteAPIRoutes(siteAPISettings, db.getProjectById));
 api.route("/settings/ai", createAISettingsRoutes(aiConfig));
 api.route(
