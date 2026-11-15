@@ -45,7 +45,8 @@ export const createTelegramSession = async (
         reply_markup: telegram.changeAI(
           project.telegramId,
           topic.message_thread_id,
-          project.enableAI
+          Boolean(initial.enable_reply && !initial.abuse_ended_at),
+          Boolean(initial.abuse_ended_at)
         ),
       }
     );

@@ -79,7 +79,6 @@ async function processVisitorMessage(job: any) {
   const recipient = await resolveAbuseState(website_id, session_id, () =>
     crisp.getVisitorEmail(website_id, session_id),
   );
-  if (recipient.blocked) return createResponse(true, "冷却中，静默忽略");
   let session = await db.getSession(cleanSessionId);
 
   if (session) {
@@ -95,7 +94,8 @@ async function processVisitorMessage(job: any) {
     session = await createTelegramSession(cleanSessionId, website_id, project);
   }
 
-  await crisp.composeMessage(website_id, session_id, true);
+  if (!recipient.blocked)
+    await crisp.composeMessage(website_id, session_id, true);
   try {
     const isText = job.data.type === "text";
 
@@ -163,6 +163,11 @@ async function processVisitorMessage(job: any) {
       }
     }
 
+    // Cooldown suppresses automated replies, not the human support inbox.
+    // Forward first so existing and new-window conversations remain visible.
+    if (recipient.blocked)
+      return createResponse(true, "冷却中，消息已转发，静默停止自动回复");
+
     const options = await db.getOption(project.id);
 
     if (isText) {
@@ -187,7 +192,8 @@ async function processVisitorMessage(job: any) {
 
     await db.updateSession(cleanSessionId, { thread: session.thread });
   } finally {
-    await crisp.composeMessage(website_id, session_id, false);
+    if (!recipient.blocked)
+      await crisp.composeMessage(website_id, session_id, false);
   }
   return createResponse(true, "任务执行完成");
 }

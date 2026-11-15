@@ -6,6 +6,9 @@ assert(Bun.env.REDIS_URL?.includes("crispai-abuse-redis-test"));
 const posts: { session: string; content: any }[] = [],
   typing: any[] = [],
   emails = new Map<string, string>();
+const forwarded: { type: string; content: string; topic: number }[] = [];
+const topicControls: any[] = [];
+let telegramSequence = 2000;
 let modelCalls = 0,
   classifierCalls = 0;
 let releaseSlow!: (value: any) => void, startSlow!: () => void;
@@ -35,8 +38,38 @@ mock.module("axios", () => ({
   },
 }));
 mock.module("@/services/telegram.service", () => ({
-  default: { api: {} },
-  changeAI: () => ({}),
+  default: {
+    api: {
+      createForumTopic: async () => ({ message_thread_id: ++telegramSequence }),
+      sendMessage: async (_group: number, text: string, options: any) => {
+        forwarded.push({
+          type: "text",
+          content: text,
+          topic: options.message_thread_id,
+        });
+        return { message_id: ++telegramSequence };
+      },
+      sendPhoto: async (_group: number, url: string, options: any) => {
+        forwarded.push({
+          type: "photo",
+          content: url,
+          topic: options.message_thread_id,
+        });
+        return { message_id: ++telegramSequence };
+      },
+      editMessageText: async () => {},
+      editMessageReplyMarkup: async () => {},
+    },
+  },
+  changeAI: (
+    _group: number,
+    topic: number,
+    enabled: boolean,
+    ended: boolean,
+  ) => {
+    topicControls.push({ topic, enabled, ended });
+    return {};
+  },
 }));
 mock.module("@/services/knowledge-runtime.service", () => ({
   getKnowledgeContext: async () => null,
@@ -107,7 +140,7 @@ for (const id of [a, b, c, d])
     id === a ? " User@Example.COM " : "user@example.com",
   );
 emails.set("session_" + e, "another@example.com");
-await db.default`insert into project(id,name,"websiteId",enabled,"enableAI","enableAIPic",options,payload) values(${project},'Cooldown isolated worker check',${project},true,true,true,'{"type":"text","text":"welcome"}'::jsonb,'support')`;
+await db.default`insert into project(id,name,"websiteId","telegramId",enabled,"enableAI","enableAIPic",options,payload) values(${project},'Cooldown isolated worker check',${project},-99331123,true,true,true,'{"type":"text","text":"welcome"}'::jsonb,'support')`;
 await db.saveAppSetting("abuse_policy:" + project, { enabled: true });
 await db.upsertSession({
   website_id: project,
@@ -117,6 +150,7 @@ await db.upsertSession({
   thread: [],
   group_id: -99331123,
   topic_id: 1235,
+  message_id: 1236,
 });
 const run = (fingerprint: number, content: string, session: string) =>
   task.processor({
@@ -186,6 +220,36 @@ try {
       content: { type: "image/png", url: "https://example.test/image.png" },
     },
   });
+  const blockedWindow = await db.getSession(d);
+  assert(
+    blockedWindow.topic_id && blockedWindow.message_id,
+    "Same-email window must create a Telegram support topic during cooldown",
+  );
+  assert(
+    forwarded.some(
+      (m) =>
+        m.type === "text" &&
+        m.topic === blockedWindow.topic_id &&
+        m.content.includes("hello"),
+    ),
+    "Blocked visitor text must still reach Telegram",
+  );
+  assert(
+    forwarded.some(
+      (m) =>
+        m.type === "photo" &&
+        m.topic === blockedWindow.topic_id &&
+        m.content === "https://example.test/image.png",
+    ),
+    "Blocked visitor image must still reach Telegram",
+  );
+  const initialControls = topicControls.find(
+    (c) => c.topic === blockedWindow.topic_id,
+  );
+  assert(
+    initialControls && !initialControls.enabled && initialControls.ended,
+    "New blocked topic must display paused AI controls",
+  );
   await intro.processor({
     data: { website_id: project, session_id: "session_" + d },
   });
@@ -243,6 +307,20 @@ try {
     "session_" + e,
     "Another email must not be blocked",
   );
+  await db.updateSession(e, { enable_reply: false });
+  const manualBefore = { posts: posts.length, modelCalls, classifierCalls };
+  await run(61, "manually paused visitor text", e);
+  assert(
+    forwarded.some(
+      (m) =>
+        m.type === "text" && m.content.includes("manually paused visitor text"),
+    ),
+  );
+  assert.deepEqual(
+    { posts: posts.length, modelCalls, classifierCalls },
+    manualBefore,
+    "Manual AI pause must preserve forwarding without generating replies",
+  );
   await db.default`update abuse_identity set blocked_until=now()-interval '1 second' where website_id=${project} and identity_key=${subject}`;
   await run(7, "hello", d);
   assert.equal(posts.at(-1)!.session, "session_" + d);
@@ -270,6 +348,9 @@ try {
       blockedWindowNoModelCalls: true,
       fixedOneHourDeadline: true,
       expiryRestoresReplies: true,
+      blockedTextAndImagesForwarded: true,
+      blockedNewWindowTopicCreated: true,
+      manualPauseStillForwards: true,
     }),
   );
 } finally {
