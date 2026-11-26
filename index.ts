@@ -42,7 +42,6 @@ hono.get("/jobs/", (c) => {
   return c.redirect("/jobs");
 });
 hono.route(basePath, serverAdapter.registerPlugin());
-// 管理页面的静态文件兜底，必须最后挂
 mountWeb();
 
 // 先启动 HTTP 服务，让 Coolify 的健康检查尽快通过；

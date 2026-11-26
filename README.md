@@ -1,8 +1,8 @@
 # KirCloud Console · CrispAI
 
 基于 [Haruka-Network/CrispAI](https://github.com/Haruka-Network/CrispAI) 的自部署扩展。
-保留原仪表盘和项目编辑界面，在项目顶部四个标签后增加「AI 配置」，并提供同风格的管理员登录页。
-原 `public/` 文件不作修改；独立扩展在页面响应中加载，新增源码位于 `web/`，不依赖额外前端构建工具。
+管理后台由 `frontend/`（Vite + React + HeroUI）构建，取代上游的预编译页面；
+项目页分为基础设置、自动回复、智能回复、知识库、选项管理五个标签，全局模型配置在 `/settings/ai`。
 
 Crisp 智能客服助手的自部署版：关键词自动回复、AI 回复（带知识库检索）、选项卡片、欢迎语，
 以及把每个 Crisp 会话同步到 Telegram 话题群，客服直接在 Telegram 里回复。
@@ -27,14 +27,14 @@ docker compose up -d
 然后用反向代理（Caddy / Nginx / Traefik 等）把域名指到 `127.0.0.1:3000`，打开
 `https://你的域名/`，用 `ADMIN_USER` / `ADMIN_PASSWORD` 登录。数据库表在首次启动时自动创建。
 
-### 登录与 AI 配置
+### 登录与模型服务
 
 1. 打开 `/login`，使用 `.env` 中已有的管理员账号密码登录。
-2. 进入项目，点击顶部新增的第五个标签 **AI 配置**。也可以使用仪表盘右上角入口，或直接访问 `/settings/ai`。
-3. 填写 OpenAI 兼容 API 的 Base URL 和 API 密钥，点击「读取模型」，从服务商 `/models` 返回的列表选择对话模型。
-   使用 DeepSeek 时可填写 `https://api.deepseek.com`。无需知识库时关闭向量检索即可。
-4. 点击「测试连接」验证当前表单；可同时检查向量输出是否为 1536 维。
-5. 点击「保存配置」。配置写入 PostgreSQL，新请求即时生效，无需重启容器。
+2. 点击右上角机器人图标进入 **模型服务**（`/settings/ai`），这里的配置所有项目共用。
+3. 填写 OpenAI 兼容 API 的 Base URL 和 API 密钥，点击「读取列表」从服务商 `/models` 选择对话模型，也可以直接输入模型名。
+   使用 DeepSeek 时可填写 `https://api.deepseek.com`。
+4. 点击「测试连接」验证当前表单；向量模式下会同时检查向量输出是否为 1536 维。
+5. 点击「保存设置」。配置写入 PostgreSQL，新请求即时生效，无需重启容器。
 6. 进入具体项目的「智能回复」，开启 AI 回复并保存。全局接口配置不会自动开启任何项目的 AI。
 
 密钥只保存在服务器，读取接口不会返回它。密钥输入框留空会保留现有值；
@@ -56,10 +56,10 @@ docker compose up -d
 向量地址留空时复用对话接口。不同服务商必须单独填写密钥，后端不会将对话密钥发送到另一家向量服务商。
 已保存的向量密钥同样不会回显，留空保留。
 
-文档保存在项目「智能回复」的知识库中。全文模式可直接保存、编辑条目，无需密钥或索引。
-向量模式下，项目的「AI 配置」底部显示已索引/待索引数量，
-「生成知识库向量」会依次处理待索引条目；失败后已完成的条目会保留，再次点击可继续。
-更换向量模型后，勾选「重新生成全部条目」再生成。生成索引会将文档正文发送给配置的向量服务商，并产生相应 API 用量。
+资料条目和文档同步来源都在项目的「知识库」标签里。全文模式可直接保存、编辑条目，无需密钥或索引；
+由文档同步维护的条目标记为「同步」，请在源站修改。
+向量模式下，「知识库」标签显示已索引/待索引数量，「生成待索引」会依次处理；失败后已完成的条目会保留，再次点击可继续。
+更换向量模型后点击「全部重新生成」。生成索引会将文档正文发送给配置的向量服务商，并产生相应 API 用量。
 向量模式下，对话时自动检索当前项目最相关的 3 条资料并作为参考上下文传给对话模型。
 
 同一页面的「文档自动同步」支持 V2Board 风格的 `knowledge/fetch` 接口：填写 API 地址、
@@ -96,10 +96,17 @@ bun run typecheck
 bun test
 ```
 
-新增页面是可编辑的 HTML、CSS 与 JavaScript（`web/`）；后端继续使用 Bun + Hono。
-`web/assets/extension.js` 在原项目页挂载第五个标签，支持键盘切换、明暗主题和移动端标签滚动。
-`web/ai-panel.html` 同时供嵌入面板和独立配置页使用。`public/` 保持原样，避免维护预编译文件的补丁。
-认证、配置保存、配置重载、连接测试和页面路由均有自动化测试。
+管理后台源码在 `frontend/`，开发时把 `/api` 代理到本地后端：
+
+```sh
+cd frontend
+bun install --frozen-lockfile
+CRISPAI_API=http://127.0.0.1:3000 bun run dev   # 打开 http://localhost:5173/login
+bun run build                                   # 产物写入 frontend/dist，后端直接托管
+```
+
+Docker 镜像在构建阶段自动编译前端。不用 Docker 时，先构建 `frontend/dist` 再启动后端，
+也可以用 `CONSOLE_DIR` 指向其他构建目录。
 
 ### 准备 Crisp 插件
 
@@ -175,18 +182,15 @@ docker compose exec postgres pg_dump -U crispai crispai > backup.sql
 
 ## 许可证
 
-后端及新增 `web/` 页面源码（本仓库中除 `public/` 以外的全部内容）以 [GNU AGPL-3.0](LICENSE) 授权，
+本仓库全部源码以 [GNU AGPL-3.0](LICENSE) 授权，
 Copyright (C) 2026 DyAxy。
 KirCloud 扩展部分 Copyright (C) 2026 KirCloud，同样以 AGPL-3.0 授权。
 
 简单说：你可以自由使用、修改和部署，包括商用。但如果你修改了代码并把它作为网络服务提供给别人使用，
 就必须以同样的许可证向这些用户公开你修改后的完整源码。只是自己部署自己用，没有任何额外义务。
 
-两点例外：
+例外：
 
-- **`public/` 不适用 AGPL。** 它是预编译的管理页面，源码不在本仓库，版权保留；
-  允许随本项目原样使用和分发，条款见 [public/LICENSE.txt](public/LICENSE.txt)。
-  其中包含的第三方开源组件见 [public/THIRD-PARTY-NOTICES.txt](public/THIRD-PARTY-NOTICES.txt)。
 - **名称和图标不随代码授权。** 你可以说明自己的服务“基于 CrispAI”，但不要让人误以为是官方提供的服务。
 
 需要在闭源产品里使用、或者不方便遵守 AGPL 的，可以联系作者获取商业授权。
@@ -196,7 +200,7 @@ Crisp 是 Crisp IM SAS 的商标，本项目是独立的第三方集成，与 Cr
 
 ### 网站实时查询（V2Board）
 
-在项目原有的「AI 配置」页填写「网站实时查询」：HTTPS API 基址（以 `/api/v1` 结尾）、官网地址和普通专用账号的 Authorization 令牌，然后保存、测试并开启。它与文档同步独立：教程继续按计划同步，套餐和公告等由支持 OpenAI 工具调用的对话模型按需实时查询。无需向量模型。
+在项目「智能回复」标签的「网站实时查询」中填写：HTTPS API 基址（以 `/api/v1` 结尾）、官网地址和普通专用账号的 Authorization 令牌，然后保存、测试并开启。它与文档同步独立：教程继续按计划同步，套餐和公告等由支持 OpenAI 工具调用的对话模型按需实时查询。无需向量模型。
 
 固定工具 `get_site_information` 仅接受 `plans`、`notices`、`payments`、`site_config` 四个主题。读取的接口为 `/user/plan/fetch`、`/user/notice/fetch?current=1&pageSize=10`、`/user/order/getPaymentMethod`、`/user/comm/config` 和 `/guest/comm/config`。套餐金额和固定手续费从分换算为主货币单位；缺失价格不等于免费。只返回允许的字段，不返回支付密钥、账号余额或订阅凭据。
 

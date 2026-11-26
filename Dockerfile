@@ -1,3 +1,10 @@
+FROM oven/bun:1.3-slim AS console
+WORKDIR /console
+COPY frontend/package.json frontend/bun.lock ./
+RUN bun install --frozen-lockfile
+COPY frontend ./
+RUN bun --bun run build
+
 FROM oven/bun:1.3-slim
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ffmpeg \
@@ -9,7 +16,7 @@ COPY tsconfig.json index.ts ./
 COPY src ./src
 COPY db ./db
 COPY public ./public
-COPY web ./web
+COPY --from=console /console/dist ./frontend/dist
 
 ENV NODE_ENV=production \
     PORT=3000 \

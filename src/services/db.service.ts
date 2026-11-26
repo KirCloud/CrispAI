@@ -275,8 +275,9 @@ export const hasPayload = async (projectId: string) => {
 // 列表不返回 vector，1536 维一条就有十几 KB
 export const listPayloads = async (projectId: string): Promise<any[]> => {
   return await sql`
-    select id, project, name, raw, created_at from payload
-    where project = ${projectId} and source_active order by created_at desc`;
+    select id, project, name, raw, created_at,
+      vector is not null as indexed, source_key is not null as synced
+    from payload where project = ${projectId} and source_active order by created_at desc`;
 };
 export const listKnowledgeText = async (project: string, maxChars: number) => {
   const rows = await sql`

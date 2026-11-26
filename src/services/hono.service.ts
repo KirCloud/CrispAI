@@ -13,15 +13,9 @@ import { crispWebhook } from "@/services/crisp.service";
 import * as storage from "@/services/storage.service";
 import logger from "@/services/logger.service";
 import api from "@/api";
-import {
-  createConsoleRoutes,
-  mountOriginalConsole,
-} from "@/services/console.service";
+import { createConsoleRoutes } from "@/services/console.service";
 
-// 管理页面的静态文件。前端源码不在这个仓库里，打包后的产物同步到 public/ 并随仓库提交
-const WEB_DIR = Bun.env.WEB_DIR
-  ? path.resolve(Bun.env.WEB_DIR)
-  : path.join(import.meta.dir, "../../public");
+const PUBLIC_DIR = path.join(import.meta.dir, "../../public");
 
 const hono = new Hono();
 hono.use("*", loggerMiddleware);
@@ -57,18 +51,13 @@ hono.get(`${storage.UPLOAD_ROUTE}/:name`, async (c) => {
   });
 });
 // 访客网站引用的欢迎语脚本
-hono.get("/intro.js", serveStatic({ root: WEB_DIR }));
+hono.get("/intro.js", serveStatic({ root: PUBLIC_DIR }));
 
 // /api/v1 里除 intro 外都需要认证，见 api/index.ts
 hono.route("/", createConsoleRoutes());
 hono.route("/api/v1", api);
 
-/**
- * 挂载管理页面。放在所有路由之后调用（index.ts 里 /jobs 挂完再调），
- * 这样静态文件兜底不会抢在其他路由前面
- */
 export const mountWeb = () => {
-  mountOriginalConsole(hono, undefined, WEB_DIR);
   hono.notFound((c) => c.text("Not Found", 404));
 };
 

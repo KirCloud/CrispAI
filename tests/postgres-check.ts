@@ -28,7 +28,6 @@ import { createAISettingsRoutes } from "../src/api/ai-settings.controller";
 import { createAdminAuth } from "../src/services/admin-auth.service";
 import {
   createConsoleRoutes,
-  mountOriginalConsole,
 } from "../src/services/console.service";
 
 const database = new URL(
@@ -75,7 +74,6 @@ app.route(
     save: saveAbusePolicy,
   }),
 );
-mountOriginalConsole(app, auth);
 assert.equal((await app.request(origin + "/api/v1/settings/ai")).status, 401);
 const login = await app.request(origin + "/api/auth/login", {
   method: "POST",

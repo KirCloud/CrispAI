@@ -1,121 +1,95 @@
-import { expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { Hono } from "hono";
-import {
-  createConsoleRoutes,
-  mountOriginalConsole,
-  ORIGINAL_DIR,
-  CONSOLE_ASSET_PREFIX,
-  CONSOLE_DIR,
-  consoleAssetVersion,
-} from "../src/services/console.service";
+import { createConsoleRoutes } from "../src/services/console.service";
 import { createAdminAuth } from "../src/services/admin-auth.service";
 
-test("original dashboard and editor keep their markup with an independent extension; AI settings and login stay protected", async () => {
-  const auth = createAdminAuth({
-    credentials: () => ({ username: "admin", password: "test-password" }),
-    publicUrl: "http://localhost",
-  });
-  const app = new Hono().route("/", createConsoleRoutes(auth));
-  mountOriginalConsole(app, auth);
-  const login = await app.request("http://localhost/login");
-  expect(login.status).toBe(200);
-  expect(await login.text()).toContain('id="login-form"');
-  expect(login.headers.get("content-security-policy")).toContain(
-    "frame-ancestors 'none'",
+let root: string;
+const auth = createAdminAuth({
+  credentials: () => ({ username: "admin", password: "test-password" }),
+  publicUrl: "http://localhost",
+});
+
+beforeAll(async () => {
+  root = await mkdtemp(path.join(tmpdir(), "crisp-console-"));
+  await mkdir(path.join(root, "assets"));
+  await writeFile(
+    path.join(root, "index.html"),
+    '<!doctype html><div id="root"></div><script type="module" src="/assets/index-abc.js"></script>',
   );
-  for (const asset of ["console.css", "console.js", "extension.js"])
-    expect(
-      (await app.request("http://localhost/console-assets/" + asset)).status,
-    ).toBe(200);
-  for (const page of [
-    "/dashboard",
-    "/dashboard/",
-    "/settings/ai",
-    "/settings/ai/",
-  ])
-    expect((await app.request("http://localhost" + page)).status).toBe(302);
-  const response = await app.request("http://localhost/api/auth/login", {
+  await writeFile(path.join(root, "assets/index-abc.js"), "export {};");
+  await writeFile(path.join(root, "theme-init.js"), "void 0;");
+});
+afterAll(() => rm(root, { recursive: true, force: true }));
+
+const app = () => new Hono().route("/", createConsoleRoutes(auth, root));
+const signIn = async (server: Hono) => {
+  const response = await server.request("http://localhost/api/auth/login", {
     method: "POST",
     headers: { Origin: "http://localhost", "Content-Type": "application/json" },
     body: JSON.stringify({ username: "admin", password: "test-password" }),
   });
-  const Cookie = response.headers.get("set-cookie")!.split(";")[0]!;
-  expect(
-    (await app.request("http://localhost/settings/ai", { headers: { Cookie } }))
-      .status,
-  ).toBe(200);
-  for (const page of ["/dashboard", "/dashboard/project/?id=test"]) {
-    const response = await app.request("http://localhost" + page, {
+  return response.headers.get("set-cookie")!.split(";")[0]!;
+};
+
+test("console pages require a session and serve the single-page app with a strict CSP", async () => {
+  const server = app();
+  for (const page of ["/dashboard", "/dashboard/project?id=x", "/settings/ai"]) {
+    const response = await server.request("http://localhost" + page);
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toStartWith("/login?next=");
+  }
+  const login = await server.request("http://localhost/login");
+  expect(login.status).toBe(200);
+  expect(await login.text()).toContain('id="root"');
+
+  const Cookie = await signIn(server);
+  for (const page of ["/dashboard", "/dashboard/project?id=x", "/settings/ai"]) {
+    const response = await server.request("http://localhost" + page, {
       headers: { Cookie },
     });
-    const html = await response.text();
     expect(response.status).toBe(200);
-    expect(html).toContain(CONSOLE_ASSET_PREFIX + "/extension.js");
-    expect(html).toContain("/_next/static/");
-    expect(html).not.toContain('class="sidebar"');
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    const csp = response.headers.get("content-security-policy")!;
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(await response.text()).toContain("/assets/index-abc.js");
   }
-  expect(
-    await Bun.file(ORIGINAL_DIR + "/dashboard/index.html").text(),
-  ).not.toContain("/console-assets/extension.js");
-  expect(
-    (await app.request("http://localhost/api/console/ai-panel")).status,
-  ).toBe(401);
-  const fragment = await app.request("http://localhost/api/console/ai-panel", {
-    headers: { Cookie },
-  });
-  expect(fragment.status).toBe(200);
-  expect(await fragment.text()).toContain('id="ai-form"');
+  const signedInLogin = await server.request(
+    "http://localhost/login?next=/settings/ai",
+    { headers: { Cookie } },
+  );
+  expect(signedInLogin.headers.get("location")).toBe("/settings/ai");
 });
 
-test("versioned console modules share a cache-safe path and change when UI or scripts change", async () => {
-  const auth = createAdminAuth({
-    credentials: () => ({ username: "admin", password: "test-password" }),
-    publicUrl: "http://localhost",
-  });
-  const app = new Hono().route("/", createConsoleRoutes(auth));
-  const login = await (await app.request("http://localhost/login")).text();
-  expect(login).toContain(CONSOLE_ASSET_PREFIX + "/console.js");
-  expect(login).not.toContain("?v=3");
-  for (const asset of [
-    "console.js",
-    "site-api.js",
-    "extension.js",
-    "console.css",
-  ]) {
-    const response = await app.request(
-      "http://localhost" + CONSOLE_ASSET_PREFIX + "/" + asset,
-    );
-    expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toContain("immutable");
-    const source = await response.text();
-    if (asset === "extension.js")
-      expect(source).toContain('from "./console.js"');
-    if (asset === "console.js")
-      expect(source).toContain('from "./site-api.js"');
-  }
-  expect(
-    (await app.request("http://localhost/console-assets/old-build/console.js"))
-      .status,
-  ).toBe(404);
-  const { mkdtemp, cp, appendFile, rm } = await import("node:fs/promises");
-  const { tmpdir } = await import("node:os");
-  const path = await import("node:path");
-  const folder = await mkdtemp(path.join(tmpdir(), "crisp-console-assets-"));
+test("hashed assets are public and immutable while unknown assets 404", async () => {
+  const server = app();
+  const asset = await server.request("http://localhost/assets/index-abc.js");
+  expect(asset.status).toBe(200);
+  expect(asset.headers.get("cache-control")).toContain("immutable");
+  expect((await server.request("http://localhost/theme-init.js")).status).toBe(200);
+  const missing = await server.request("http://localhost/assets/missing.js");
+  expect(missing.status).toBe(404);
+  expect(missing.headers.get("cache-control")).toBeNull();
+});
+
+test("old trailing-slash URLs from the upstream export redirect and keep their query", async () => {
+  const response = await app().request(
+    "http://localhost/dashboard/project/?id=abc",
+  );
+  expect(response.status).toBe(301);
+  expect(response.headers.get("location")).toBe("/dashboard/project?id=abc");
+});
+
+test("a missing build answers with a clear error instead of a blank page", async () => {
+  const empty = await mkdtemp(path.join(tmpdir(), "crisp-console-empty-"));
   try {
-    await cp(CONSOLE_DIR, folder, { recursive: true });
-    const before = consoleAssetVersion(folder);
-    await appendFile(
-      path.join(folder, "assets/site-api.js"),
-      "\n// changed release\n",
-    );
-    expect(consoleAssetVersion(folder)).not.toBe(before);
-    const scriptChange = consoleAssetVersion(folder);
-    await appendFile(
-      path.join(folder, "ai-panel.html"),
-      "\n<!-- changed controls -->\n",
-    );
-    expect(consoleAssetVersion(folder)).not.toBe(scriptChange);
+    const server = new Hono().route("/", createConsoleRoutes(auth, empty));
+    const response = await server.request("http://localhost/login");
+    expect(response.status).toBe(503);
   } finally {
-    await rm(folder, { recursive: true, force: true });
+    await rm(empty, { recursive: true, force: true });
   }
 });
