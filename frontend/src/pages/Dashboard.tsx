@@ -19,6 +19,7 @@ import {
 } from "@heroui/react";
 import {
   RiAddLargeLine,
+  RiChat3Line,
   RiCheckboxCircleLine,
   RiCloseCircleLine,
   RiFolderAddLine,
@@ -86,14 +87,21 @@ function ProjectCard({ project }: { project: Project }) {
         </Chip>
       </CardBody>
       <CardFooter className="flex flex-wrap gap-2">
-        <Chip
-          size="sm"
-          variant="flat"
-          color={project.websiteId ? "primary" : "warning"}
-          startContent={<RiGlobalLine className={icon} />}
-        >
-          {project.websiteId ? "已绑定网站" : "未绑定网站"}
-        </Chip>
+        {project.websiteId && (
+          <Chip size="sm" variant="flat" color="primary" startContent={<RiGlobalLine className={icon} />}>
+            Crisp
+          </Chip>
+        )}
+        {project.chatwootEnabled && (
+          <Chip size="sm" variant="flat" color="primary" startContent={<RiChat3Line className={icon} />}>
+            Chatwoot
+          </Chip>
+        )}
+        {!project.websiteId && !project.chatwootEnabled && (
+          <Chip size="sm" variant="flat" color="warning" startContent={<RiGlobalLine className={icon} />}>
+            未绑定网站
+          </Chip>
+        )}
         <Chip
           size="sm"
           variant="flat"

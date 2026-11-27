@@ -10,6 +10,7 @@ import { crispMiddleware } from "@/middlewares/crisp.middleware";
 import { authMiddleware } from "@/middlewares/auth.middleware";
 import bot, { WEBHOOK_SECRET } from "@/services/telegram.service";
 import { crispWebhook } from "@/services/crisp.service";
+import { chatwootWebhook } from "@/services/chatwoot-webhook.service";
 import * as storage from "@/services/storage.service";
 import logger from "@/services/logger.service";
 import api from "@/api";
@@ -22,6 +23,8 @@ hono.use("*", loggerMiddleware);
 hono.use("/api/auth/*", bodyLimit({ maxSize: 16 * 1024 }));
 hono.use("/api/v1/settings/*", bodyLimit({ maxSize: 32 * 1024 }));
 hono.use("/api/v1/knowledge/*", bodyLimit({ maxSize: 16 * 1024 }));
+hono.use("/api/v1/chatwoot", bodyLimit({ maxSize: 16 * 1024 }));
+hono.use("/chatwoot/*", bodyLimit({ maxSize: 1024 * 1024 }));
 
 hono.onError((error, c) => {
   // basicAuth 等中间件用 HTTPException 表达 401，要原样返回（带 WWW-Authenticate 头浏览器才会弹登录框）
@@ -42,6 +45,7 @@ hono.post(
   telegramWebhook(bot, "hono", { secretToken: WEBHOOK_SECRET }),
 );
 hono.post("/crisp", crispMiddleware, crispWebhook);
+hono.post("/chatwoot/:project", chatwootWebhook);
 // Telegram 客服发的图片，Crisp 要从公网拉取
 hono.get(`${storage.UPLOAD_ROUTE}/:name`, async (c) => {
   const file = await storage.getFile(c.req.param("name"));

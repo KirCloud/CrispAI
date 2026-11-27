@@ -21,7 +21,7 @@ import { getKnowledgeContext } from "@/services/knowledge-runtime.service";
 import { withKnowledgeContext } from "@/services/knowledge-context.service";
 import * as db from "@/services/db.service";
 import * as telegram from "@/services/telegram.service";
-import * as crisp from "@/services/crisp.service";
+import * as chat from "@/services/chat.service";
 import { Queue } from "bullmq";
 import path from "path";
 import { createResponse } from "@/utils/general";
@@ -36,6 +36,7 @@ import type { Message } from "grammy/types";
 import ffmpeg from "fluent-ffmpeg";
 import axios from "axios";
 import { connection } from "@/services/redis.service";
+import { randomUUID } from "node:crypto";
 
 const currentFileName = path.basename(
   import.meta.url,
@@ -77,7 +78,7 @@ async function processVisitorMessage(job: any) {
   }
 
   const recipient = await resolveAbuseState(website_id, session_id, () =>
-    crisp.getVisitorEmail(website_id, session_id),
+    chat.getVisitorEmail(website_id, session_id),
   );
   let session = await db.getSession(cleanSessionId);
 
@@ -95,7 +96,7 @@ async function processVisitorMessage(job: any) {
   }
 
   if (!recipient.blocked)
-    await crisp.composeMessage(website_id, session_id, true);
+    await chat.composeMessage(website_id, session_id, true);
   try {
     const isText = job.data.type === "text";
 
@@ -131,7 +132,7 @@ async function processVisitorMessage(job: any) {
         }
       } else if (job.data.content.type.includes("audio")) {
         const converter = async (url: string) => {
-          const output = url.split("/").pop()!.split(".")[0] + ".mp3";
+          const output = randomUUID() + ".mp3";
           const response = await axios.get(url, { responseType: "stream" });
           return new Promise<string>((resolve, reject) => {
             ffmpeg(response.data)
@@ -193,7 +194,7 @@ async function processVisitorMessage(job: any) {
     await db.updateSession(cleanSessionId, { thread: session.thread });
   } finally {
     if (!recipient.blocked)
-      await crisp.composeMessage(website_id, session_id, false);
+      await chat.composeMessage(website_id, session_id, false);
   }
   return createResponse(true, "任务执行完成");
 }
@@ -260,7 +261,7 @@ async function handleTextMessage(
   jobId: string,
 ) {
   const state = await resolveAbuseState(body.website_id, body.session_id, () =>
-    crisp.getVisitorEmail(body.website_id, body.session_id),
+    chat.getVisitorEmail(body.website_id, body.session_id),
   );
   Object.assign(session, state.session);
   const messageKey = abuseMessageKey(body, jobId);
@@ -272,7 +273,7 @@ async function handleTextMessage(
     delivered: db.markAbuseWarningDelivered,
     classify: classifyDirectedAbuse,
     send: (text, warningKey) =>
-      crisp.sendMessage(
+      chat.sendMessage(
         body.website_id,
         body.session_id,
         text,
@@ -345,7 +346,7 @@ async function handleKeywordReply(
   if (!replyOption) return;
 
   if (replyOption.type === "text") {
-    await crisp.sendMessage(
+    await chat.sendMessage(
       website_id,
       session_id,
       replyOption.text,
@@ -358,7 +359,7 @@ async function handleKeywordReply(
   if (replyOption.type === "option") {
     const option = options.find((o) => o.id === replyOption.optionId);
     if (option) {
-      await crisp.sendOption(
+      await chat.sendOption(
         website_id,
         session_id,
         option,
@@ -372,7 +373,8 @@ async function handleKeywordReply(
   if (replyOption.type === "closeAI" && session.enable_reply) {
     const msg = "已关闭智能回复，请等待人工客服接入...";
     await db.setSessionReply(session.session_id, false);
-    await crisp.sendMessage(
+    await chat.handoff(website_id, session_id);
+    await chat.sendMessage(
       website_id,
       session_id,
       msg,
@@ -386,7 +388,7 @@ async function handleAIReply(session: Session, body: any, project: any) {
   if (
     (
       await resolveAbuseState(body.website_id, body.session_id, () =>
-        crisp.getVisitorEmail(body.website_id, body.session_id),
+        chat.getVisitorEmail(body.website_id, body.session_id),
       )
     ).blocked
   )
@@ -403,7 +405,7 @@ async function handleAIReply(session: Session, body: any, project: any) {
   if (!reply?.content) return;
 
   const content = normalizeCrispReply(reply.content);
-  const sent = await crisp.sendMessage(
+  const sent = await chat.sendMessage(
     body.website_id,
     body.session_id,
     content,
@@ -436,7 +438,7 @@ async function buildMessages(
   messages.push({
     role: "system",
     content: JSON.stringify(
-      await crisp.getMetas(body.website_id, body.session_id),
+      await chat.getMetas(body.website_id, body.session_id),
     ),
   });
 
@@ -490,7 +492,7 @@ async function handleImageMessage(
   });
 
   const replyText = normalizeCrispReply(reply?.content ?? "无法识别该图片");
-  const sent = await crisp.sendMessage(
+  const sent = await chat.sendMessage(
     body.website_id,
     body.session_id,
     replyText,

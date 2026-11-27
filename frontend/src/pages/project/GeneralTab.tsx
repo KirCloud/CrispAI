@@ -10,15 +10,17 @@ import {
   ModalContent,
   ModalFooter,
   ModalHeader,
+  Skeleton,
   Snippet,
   Switch,
   useDisclosure,
 } from "@heroui/react";
 import { RiDeleteBinLine, RiDownload2Line } from "@remixicon/react";
-import { api } from "../../api";
+import { useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
+import { api, scoped } from "../../api";
 import { useDirty } from "../../dirty";
 import { notify, PanelCard, Section, SettingRow, successSwitch } from "../../components/ui";
-import type { Welcome } from "../../types";
+import type { ChatwootBinding, Welcome } from "../../types";
 import {
   cleanTrigger,
   TriggerFields,
@@ -31,10 +33,20 @@ import {
 const field = "w-full sm:w-72";
 
 export function GeneralTab({ project }: TabProps) {
+  const chatwoot = useQuery({
+    queryKey: ["chatwoot", project.id],
+    queryFn: () => api.get<ChatwootBinding>(scoped("/api/v1/chatwoot", project.id)),
+  });
+  if (chatwoot.isPending) return <Skeleton className="h-96 rounded-large" />;
+  return <GeneralForm project={project} chatwoot={chatwoot} />;
+}
+
+function GeneralForm({ project, chatwoot }: TabProps & { chatwoot: UseQueryResult<ChatwootBinding> }) {
   const navigate = useNavigate();
+  const client = useQueryClient();
   const refresh = useRefreshProject(project.id);
   const options = useOptionCards(project.id);
-  const [draft, setDraft, dirty, reset] = useDraft({
+  const [draft, setDraft, generalDirty, resetGeneral] = useDraft({
     enabled: project.enabled,
     name: project.name ?? "",
     websiteId: project.websiteId ?? "",
@@ -44,7 +56,21 @@ export function GeneralTab({ project }: TabProps) {
     timer: project.timer?.toString() ?? "1800",
     options: project.options ?? { type: "none" },
   });
+  const [cw, setCw, chatwootDirty, resetChatwoot] = useDraft({
+    enabled: chatwoot.data?.enabled ?? false,
+    baseUrl: chatwoot.data?.baseUrl ?? "",
+    inboxId: chatwoot.data?.inboxId?.toString() ?? "",
+    botToken: "",
+    webhookSecret: "",
+  });
+  const dirty = generalDirty || chatwootDirty;
   useDirty(dirty);
+  const reset = () => {
+    resetGeneral();
+    resetChatwoot();
+  };
+  const chatwootPath = scoped("/api/v1/chatwoot", project.id);
+  const setChatwoot = (patch: Partial<typeof cw>) => setCw((value) => ({ ...value, ...patch }));
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -55,29 +81,49 @@ export function GeneralTab({ project }: TabProps) {
   const telegramInvalid =
     draft.telegramId !== "" && !/^-?\d+$/.test(draft.telegramId.trim());
   const timerInvalid = !/^[1-9]\d*$/.test(draft.timer.trim());
+  const inboxInvalid = cw.inboxId.trim() !== "" && !/^[1-9]\d*$/.test(cw.inboxId.trim());
 
   const save = async () => {
-    if (telegramInvalid || timerInvalid) return notify.error("请检查标红的字段");
+    if (telegramInvalid || timerInvalid || inboxInvalid) return notify.error("请检查标红的字段");
     setSaving(true);
-    try {
-      await api.post("/api/v1/saveProjectGeneral", {
-        id: project.id,
-        enabled: draft.enabled,
-        ...(draft.name.trim() && { name: draft.name.trim() }),
-        ...(draft.websiteId.trim() && { websiteId: draft.websiteId.trim() }),
-        ...(draft.botName.trim() && { botName: draft.botName.trim() }),
-        ...(draft.botIcon.trim() && { botIcon: draft.botIcon.trim() }),
-        ...(draft.telegramId.trim() && { telegramId: Number(draft.telegramId) }),
-        timer: Number(draft.timer),
-        options: cleanTrigger(draft.options),
-      });
-      await refresh();
-      notify.success("基础设置已保存");
-    } catch (error) {
-      notify.error(error);
-    } finally {
-      setSaving(false);
+    const failures: string[] = [];
+    if (generalDirty) {
+      try {
+        await api.post("/api/v1/saveProjectGeneral", {
+          id: project.id,
+          enabled: draft.enabled,
+          ...(draft.name.trim() && { name: draft.name.trim() }),
+          websiteId: draft.websiteId.trim(),
+          ...(draft.botName.trim() && { botName: draft.botName.trim() }),
+          ...(draft.botIcon.trim() && { botIcon: draft.botIcon.trim() }),
+          ...(draft.telegramId.trim() && { telegramId: Number(draft.telegramId) }),
+          timer: Number(draft.timer),
+          options: cleanTrigger(draft.options),
+        });
+        await refresh();
+      } catch (error) {
+        failures.push(`基础设置：${(error as Error).message}`);
+      }
     }
+    if (chatwootDirty) {
+      try {
+        const { botToken, webhookSecret, inboxId, ...rest } = cw;
+        const { data } = await api.put<{ data: ChatwootBinding }>(chatwootPath, {
+          ...rest,
+          baseUrl: rest.baseUrl.trim(),
+          inboxId: inboxId.trim() ? Number(inboxId) : null,
+          ...(botToken.trim() && { botToken: botToken.trim() }),
+          ...(webhookSecret.trim() && { webhookSecret: webhookSecret.trim() }),
+        });
+        client.setQueryData(["chatwoot", project.id], data);
+        await client.invalidateQueries({ queryKey: ["projects"] });
+      } catch (error) {
+        failures.push(`Chatwoot：${(error as Error).message}`);
+      }
+    }
+    setSaving(false);
+    if (failures.length) failures.forEach((failure) => notify.error(failure));
+    else notify.success("基础设置已保存");
   };
 
   const exportProject = async () => {
@@ -143,7 +189,7 @@ export function GeneralTab({ project }: TabProps) {
         </>
       }
     >
-      <SettingRow inline title="启用项目" description="配置完成后开启，项目才会处理 Crisp 消息">
+      <SettingRow inline title="启用项目" description="配置完成后开启，项目才会处理 Crisp 和 Chatwoot 消息">
         <Switch
           classNames={successSwitch}
           isSelected={draft.enabled}
@@ -164,7 +210,7 @@ export function GeneralTab({ project }: TabProps) {
               <Link href="https://app.crisp.chat/website/" isExternal showAnchorIcon size="sm" className="text-tiny">
                 Crisp 后台
               </Link>{" "}
-              的网站设置中获取
+              的网站设置中获取；不接 Crisp 就留空
             </>
           }
         >
@@ -185,8 +231,75 @@ export function GeneralTab({ project }: TabProps) {
         </SettingRow>
       </Section>
 
+      <Section
+        title="Chatwoot"
+        description="在 Chatwoot「设置 → 机器人」新建机器人，Webhook 地址填下面这个，再到收件箱的「机器人配置」里选中它"
+      >
+        <SettingRow inline title="接入 Chatwoot" description="与 Crisp 共用本项目的提示词、关键词、选项卡片和知识库">
+          <Switch
+            classNames={successSwitch}
+            isSelected={cw.enabled}
+            isDisabled={!chatwoot.isSuccess}
+            onValueChange={(enabled) => setChatwoot({ enabled })}
+            aria-label="接入 Chatwoot"
+          />
+        </SettingRow>
+        {chatwoot.data?.webhookUrl && (
+          <SettingRow stacked title="Webhook 地址" description="填到 Chatwoot 机器人的 Webhook URL；请求带签名，必须是 Chatwoot 能访问到的公网 HTTPS 地址">
+            <Snippet symbol="" variant="bordered" className="w-full" classNames={{ pre: "whitespace-pre-wrap break-all" }}>
+              {chatwoot.data.webhookUrl}
+            </Snippet>
+          </SettingRow>
+        )}
+        {(cw.enabled || chatwoot.data?.baseUrl) && (
+          <div className="grid gap-3 rounded-medium bg-content2 p-4 sm:grid-cols-2">
+            <Input
+              label="Chatwoot 地址"
+              labelPlacement="outside"
+              placeholder="https://chat.example.com"
+              variant="bordered"
+              type="url"
+              value={cw.baseUrl}
+              onValueChange={(baseUrl) => setChatwoot({ baseUrl })}
+            />
+            <Input
+              label="收件箱 ID"
+              labelPlacement="outside"
+              placeholder="留空处理机器人连接的所有收件箱"
+              variant="bordered"
+              inputMode="numeric"
+              value={cw.inboxId}
+              onValueChange={(inboxId) => setChatwoot({ inboxId })}
+              isInvalid={inboxInvalid}
+              errorMessage="收件箱 ID 只能是正整数"
+            />
+            <Input
+              label="机器人访问令牌"
+              labelPlacement="outside"
+              placeholder={chatwoot.data?.hasBotToken ? "已保存，留空不修改" : "机器人详情里的 Access Token"}
+              variant="bordered"
+              type="password"
+              autoComplete="off"
+              value={cw.botToken}
+              onValueChange={(botToken) => setChatwoot({ botToken })}
+            />
+            <Input
+              label="Webhook 密钥"
+              labelPlacement="outside"
+              placeholder={chatwoot.data?.hasWebhookSecret ? "已保存，留空不修改" : "机器人详情里的 Webhook Secret"}
+              description="只保存在服务器；更换 Chatwoot 地址时需重新填写令牌和密钥"
+              variant="bordered"
+              type="password"
+              autoComplete="off"
+              value={cw.webhookSecret}
+              onValueChange={(webhookSecret) => setChatwoot({ webhookSecret })}
+            />
+          </div>
+        )}
+      </Section>
+
       <Section title="回复身份">
-        <SettingRow title="回复名称" description="访客看到的客服昵称，留空使用 Crisp 默认">
+        <SettingRow title="回复名称" description="访客看到的客服昵称，留空使用 Crisp 默认；Chatwoot 显示机器人自己的名称和头像">
           <Input className={field} variant="bordered" value={draft.botName} onValueChange={(botName) => set({ botName })} aria-label="回复名称" />
         </SettingRow>
         <SettingRow title="回复头像" description="头像图片的 HTTPS 地址">
@@ -220,7 +333,7 @@ export function GeneralTab({ project }: TabProps) {
         <SettingRow
           stacked
           title="访客打开聊天窗口时的动作"
-          description="需要把下面的脚本放进 Crisp 的自定义脚本，并确保在 Crisp 之后加载"
+          description="Crisp 需要把下面的脚本放进自定义脚本，并在 Crisp 之后加载；Chatwoot 不用脚本，但请关闭收件箱自带的问候语，免得发两遍"
         >
           <Snippet symbol="" variant="bordered" className="w-full" classNames={{ pre: "whitespace-pre-wrap break-all" }}>
             {`<script src="${location.origin}/intro.js"></script>`}

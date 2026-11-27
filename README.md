@@ -6,6 +6,7 @@
 
 Crisp 智能客服助手的自部署版：关键词自动回复、AI 回复（带知识库检索）、选项卡片、欢迎语，
 以及把每个 Crisp 会话同步到 Telegram 话题群，客服直接在 Telegram 里回复。
+同一个项目还可以同时接入 Chatwoot，两边共用提示词、关键词、选项卡片和知识库。
 
 单用户、多项目。一个 `docker compose up` 起全套：
 
@@ -120,6 +121,27 @@ Docker 镜像在构建阶段自动编译前端。不用 Docker 时，先构建 `
 6. 在管理后台创建项目，把该站点的 Website ID 填到「基础设置」里并启用项目
 
 没安装插件的站点不会向 `/crisp` 推送任何消息，项目看起来就是「启用了但没反应」，排查时先确认这一步。
+
+### 接入 Chatwoot（可与 Crisp 同时使用）
+
+Chatwoot 通过「机器人」（Agent Bot）接入，需要 Chatwoot 能通过公网 HTTPS 访问 CrispAI：
+Chatwoot 默认不向内网地址发送 Webhook。
+
+1. 在 Chatwoot「设置 → 机器人」新建机器人。机器人的名称和头像就是访客看到的客服身份，
+   项目里的「回复名称」「回复头像」只对 Crisp 生效
+2. Webhook URL 填项目「基础设置 → Chatwoot」里显示的 `https://你的域名/chatwoot/<项目 ID>`
+3. 把机器人详情里的 Access Token 和 Webhook Secret、Chatwoot 地址填到同一处，开启并保存；
+   收件箱 ID 可选，填写后只处理该收件箱
+4. 在收件箱「设置 → 机器人配置」里选中这个机器人
+
+连上机器人后，新会话先是「待处理」状态，由 CrispAI 接待，访客消息照常转发到 Telegram 话题
+（话题名以 `[Chatwoot]` 开头，信息卡里有打开该会话的链接）。触发「关闭智能回复」时，会话会转成「开放」，
+进入客服列表；客服在 Chatwoot 或 Telegram 回复后，AI 按「人工接管后恢复自动回复」的时间暂停。
+Webhook 带签名校验；项目或 Chatwoot 接入停用时返回 503，Chatwoot 会把待处理会话直接转给人工。
+
+欢迎语在访客打开聊天窗口时发送，每位访客每小时最多一次；从没发过消息的访客会先新建一个会话。
+请关闭 Chatwoot 收件箱自带的问候语，免得发两遍。
+Chatwoot 会话的辱骂冷却单独计算，不与 Crisp 共享。机器人令牌和 Webhook 密钥只保存在服务器，不包含在项目导出文件内。
 
 ### 准备 Telegram
 

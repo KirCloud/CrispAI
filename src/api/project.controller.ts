@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import z from "zod";
 import * as db from "@/services/db.service";
 import { validate } from "@/api/validator";
+import { chatwootBindings } from "@/services/chatwoot.service";
 
 const triggerType = z.enum(["none", "text", "option", "closeAI"]);
 
@@ -10,7 +11,16 @@ const isUniqueViolation = (error: unknown) =>
   (error as any)?.errno === "23505" || (error as any)?.code === "23505";
 
 export const listController = async (c: Context) => {
-  return c.json({ data: await db.listProjects() });
+  const projects = await db.listProjects();
+  const data = await Promise.all(
+    projects.map(async (project) => ({
+      ...project,
+      chatwootEnabled: Boolean(
+        (await chatwootBindings.load(project.id))?.enabled,
+      ),
+    })),
+  );
+  return c.json({ data });
 };
 
 export const getSchema = validate("query", z.object({ id: z.string().uuid() }));
@@ -68,7 +78,9 @@ export const saveGeneralController = async (c: Context) => {
 
   const patch: Record<string, unknown> = { enabled: data.enabled };
   if (data.name) patch["name"] = data.name;
-  if (data.websiteId) patch["websiteId"] = data.websiteId;
+  // 空字符串表示解除 Crisp 绑定，项目可以只接 Chatwoot
+  if (typeof data.websiteId === "string")
+    patch["websiteId"] = data.websiteId.trim() || null;
   if (data.botName) patch["botName"] = data.botName;
   if (data.botIcon) patch["botIcon"] = data.botIcon;
   if (data.telegramId) patch["telegramId"] = data.telegramId;

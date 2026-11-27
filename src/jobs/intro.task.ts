@@ -1,7 +1,9 @@
 import { resolveAbuseState } from "@/services/abuse-runtime.service";
 import { withConversationLock } from "@/services/conversation-lock.service";
 import * as db from "@/services/db.service";
-import * as crisp from "@/services/crisp.service";
+import * as chat from "@/services/chat.service";
+import { startConversation } from "@/services/chatwoot.service";
+import { chatwootProjectOf } from "@/utils/conversation-id";
 import { Queue } from "bullmq";
 import path from "path";
 import { createResponse } from "@/utils/general";
@@ -32,32 +34,38 @@ export default {
     withConversationLock(
       connection,
       job.data.website_id,
-      job.data.session_id,
+      job.data.session_id ?? "intro:" + job.data.chatwoot?.sourceId,
       () => processIntro(job),
     ),
 };
 async function processIntro(job: any) {
-  const { website_id, session_id } = job.data;
+  const { website_id } = job.data;
   const project = await db.getProject(website_id);
   if (!project) return createResponse(false, "未找到项目");
-
-  const state = await resolveAbuseState(website_id, session_id, () =>
-    crisp.getVisitorEmail(website_id, session_id),
-  );
-  if (state.blocked) return createResponse(true, "智能会话已结束");
-  const data = await crisp.getMessages(website_id, session_id);
-  if (data.length > 0) {
-    const message = data[data.length - 1];
-    if (message.timestamp + 1000 * 60 * 60 > Date.now()) {
-      return createResponse(false, "已有用户消息，无需发送欢迎语");
-    }
-  }
   if (!project.options.type || project.options.type === "none") {
     return createResponse(true, "无需发送欢迎语");
   }
 
+  // A Chatwoot visitor who has never written has no conversation to greet in.
+  let session_id: string = job.data.session_id;
+  if (!session_id) {
+    const chatwootProject = chatwootProjectOf(website_id);
+    if (!chatwootProject || !job.data.chatwoot)
+      return createResponse(false, "缺少会话");
+    session_id = await startConversation(chatwootProject, job.data.chatwoot);
+  }
+
+  const state = await resolveAbuseState(website_id, session_id, () =>
+    chat.getVisitorEmail(website_id, session_id),
+  );
+  if (state.blocked) return createResponse(true, "智能会话已结束");
+  const lastMessage = await chat.lastMessageAt(website_id, session_id);
+  if (lastMessage && lastMessage + 1000 * 60 * 60 > Date.now()) {
+    return createResponse(false, "已有用户消息，无需发送欢迎语");
+  }
+
   if (project.options.type === "text") {
-    await crisp.sendMessage(
+    await chat.sendMessage(
       website_id,
       session_id,
       project.options.text,
@@ -72,7 +80,7 @@ async function processIntro(job: any) {
     if (!option) {
       return createResponse(false, "未找到欢迎语选项");
     }
-    await crisp.sendOption(
+    await chat.sendOption(
       website_id,
       session_id,
       option,

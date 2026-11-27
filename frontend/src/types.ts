@@ -26,6 +26,16 @@ export type Project = {
   options: Welcome;
   timer: number;
   created_at: string;
+  chatwootEnabled?: boolean;
+};
+
+export type ChatwootBinding = {
+  enabled: boolean;
+  baseUrl: string;
+  inboxId: number | null;
+  hasBotToken: boolean;
+  hasWebhookSecret: boolean;
+  webhookUrl: string;
 };
 
 export type OptionCard = {

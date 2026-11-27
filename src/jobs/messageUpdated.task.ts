@@ -1,6 +1,6 @@
 import { resolveAbuseState } from "@/services/abuse-runtime.service";
 import { withConversationLock } from "@/services/conversation-lock.service";
-import * as crisp from "@/services/crisp.service";
+import * as chat from "@/services/chat.service";
 import * as db from "@/services/db.service";
 import * as telegram from "@/services/telegram.service";
 import { Queue } from "bullmq";
@@ -46,10 +46,10 @@ async function processOption(job: any) {
   if (!isPicker) return createResponse(false, "跳过非选项消息");
 
   const state = await resolveAbuseState(website_id, session_id, () =>
-    crisp.getVisitorEmail(website_id, session_id),
+    chat.getVisitorEmail(website_id, session_id),
   );
   if (state.blocked) return createResponse(true, "智能会话已结束");
-  await crisp.composeMessage(website_id, session_id, true);
+  await chat.composeMessage(website_id, session_id, true);
   const project = await db.getProject(website_id);
   if (!project) return createResponse(false, "项目不存在");
 
@@ -60,13 +60,14 @@ async function processOption(job: any) {
   const tasks = content.choices.map(async (choice: any, i: number) => {
     if (!choice.selected) return;
 
-    const replyOption = currentOption.options[i].trigger;
+    const replyOption = currentOption.options[i]?.trigger;
+    if (!replyOption) return;
     let replyContent: string | undefined;
 
     switch (replyOption.type) {
       case "text":
         replyContent = replyOption.text;
-        await crisp.sendMessage(
+        await chat.sendMessage(
           website_id,
           session_id,
           replyContent!,
@@ -79,7 +80,7 @@ async function processOption(job: any) {
         const nextOption = options.find((o) => o.id === replyOption.optionId);
         if (nextOption) {
           replyContent = nextOption.text;
-          await crisp.sendOption(
+          await chat.sendOption(
             website_id,
             session_id,
             nextOption,
@@ -92,8 +93,9 @@ async function processOption(job: any) {
       case "closeAI":
         replyContent = "已关闭智能回复，请等待人工客服接入...";
         await db.setSessionReply(cleanSessionId, false);
+        await chat.handoff(website_id, session_id);
 
-        await crisp.sendMessage(
+        await chat.sendMessage(
           website_id,
           session_id,
           replyContent,

@@ -1,6 +1,7 @@
 import * as db from "@/services/db.service";
 import * as telegram from "@/services/telegram.service";
-import * as crisp from "@/services/crisp.service";
+import * as chat from "@/services/chat.service";
+import { parseChatwootSession } from "@/utils/conversation-id";
 
 export const createTelegramSession = async (
   session_id: string,
@@ -80,7 +81,9 @@ const generateTelegramName = (session_id: string, flow: string[]) => {
       break;
     }
   }
-  return nickname;
+  const chatwoot = parseChatwootSession(session_id);
+  if (!chatwoot) return nickname;
+  return `[Chatwoot] ${nickname === session_id ? "#" + chatwoot.conversation : nickname}`;
 };
 
 interface CacheItem {
@@ -109,9 +112,9 @@ export const generateTelegramSession = async (
     }
 
     const flow = [""];
-    const meta = await crisp.getMetas(website_id, "session_" + session_id);
+    const meta = await chat.getMetas(website_id, session_id);
     if (meta && meta.length > 0) flow.push(...meta);
-    const pages = await crisp.listPages(website_id, "session_" + session_id);
+    const pages = await chat.listPages(website_id, session_id);
     if (pages && pages.length > 0) flow.push(...pages);
 
     if (flow.length > 1 || (flow.length === 1 && flow[0] !== "")) {

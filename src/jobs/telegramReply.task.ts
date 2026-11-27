@@ -1,7 +1,6 @@
 import * as db from "@/services/db.service";
-import * as storage from "@/services/storage.service";
 import * as telegram from "@/services/telegram.service";
-import * as crisp from "@/services/crisp.service";
+import * as chat from "@/services/chat.service";
 import { Queue } from "bullmq";
 import path from "path";
 import { createResponse } from "@/utils/general";
@@ -42,28 +41,9 @@ export default {
     if (!project) {
       return createResponse(false, "未找到项目");
     }
-    const msg = job.data.caption || job.data.text;
-    // 发送文本内容到 Crisp
-    if (msg) {
-      await crisp.composeMessage(
-        data.website_id,
-        "session_" + data.session_id,
-        true,
-      );
-      await crisp.sendMessage(
-        project.websiteId,
-        "session_" + data.session_id,
-        msg,
-        project.botName,
-        project.botIcon,
-        { human: true },
-      );
-      await crisp.composeMessage(
-        data.website_id,
-        "session_" + data.session_id,
-        false,
-      );
-
+    const website = data.website_id;
+    const session = data.session_id;
+    const react = async () => {
       try {
         await telegram.default.api.setMessageReaction(
           group_id,
@@ -76,6 +56,20 @@ export default {
           ],
         );
       } catch {}
+    };
+    const msg = job.data.caption || job.data.text;
+    if (msg) {
+      await chat.composeMessage(website, session, true);
+      await chat.sendMessage(
+        website,
+        session,
+        msg,
+        project.botName,
+        project.botIcon,
+        { human: true },
+      );
+      await chat.composeMessage(website, session, false);
+      await react();
     }
 
     // 如果开启智能回复，则关闭
@@ -91,112 +85,63 @@ export default {
         );
       } catch {}
     }
-    // 如果有图片，则发送图片到 Crisp
     if (job.data.photo) {
-      await crisp.composeMessage(
-        data.website_id,
-        "session_" + data.session_id,
-        true,
-      );
+      await chat.composeMessage(website, session, true);
       const photo = job.data.photo.pop();
       if (!photo) {
         return createResponse(false, "图片不存在");
       }
 
-      const markdownImage = await uploadFile(photo.file_id);
-
-      await crisp.sendMessage(
-        project.websiteId,
-        "session_" + data.session_id,
-        markdownImage,
+      await chat.sendImage(
+        website,
+        session,
+        await downloadFile(photo.file_id),
         project.botName,
         project.botIcon,
-        { human: true },
       );
-      await crisp.composeMessage(
-        data.website_id,
-        "session_" + data.session_id,
-        false,
-      );
-      if (!msg) {
-        try {
-          await telegram.default.api.setMessageReaction(
-            group_id,
-            job.data.message_id,
-            [
-              {
-                type: "emoji",
-                emoji: "👌",
-              },
-            ],
-          );
-        } catch {}
-      }
+      await chat.composeMessage(website, session, false);
+      if (!msg) await react();
     }
 
     if (job.data.sticker) {
-      if (job.data.sticker.is_animated || job.data.sticker.is_video) {
-        return createResponse(false, "不支持发送动图或视频贴纸");
-      }
-
-      await crisp.composeMessage(
-        data.website_id,
-        "session_" + data.session_id,
-        true,
-      );
       const sticker = job.data.sticker;
-      if (!sticker) {
-        return createResponse(false, "贴纸不存在");
-      }
       if (sticker.is_animated || sticker.is_video) {
         return createResponse(false, "不支持发送动图或视频贴纸");
       }
 
-      const markdownImage = await uploadFile(sticker.file_id);
-
-      await crisp.sendMessage(
-        project.websiteId,
-        "session_" + data.session_id,
-        markdownImage,
+      await chat.composeMessage(website, session, true);
+      await chat.sendImage(
+        website,
+        session,
+        await downloadFile(sticker.file_id),
         project.botName,
         project.botIcon,
-        { human: true },
       );
-      await crisp.composeMessage(
-        data.website_id,
-        "session_" + data.session_id,
-        false,
-      );
-      if (!msg) {
-        try {
-          await telegram.default.api.setMessageReaction(
-            group_id,
-            job.data.message_id,
-            [
-              {
-                type: "emoji",
-                emoji: "👌",
-              },
-            ],
-          );
-        } catch {}
-      }
+      await chat.composeMessage(website, session, false);
+      if (!msg) await react();
     }
     return createResponse(true, "任务执行成功");
   },
 };
 
-const uploadFile = async (fileId: string) => {
+const IMAGE_TYPES: Record<string, string> = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+};
+
+const downloadFile = async (fileId: string) => {
   const file = await telegram.default.api.getFile(fileId);
   const response = await axios.get<ArrayBuffer>(
     `https://api.telegram.org/file/bot${Bun.env.TELEGRAM_TOKEN}/${file.file_path}`,
     { responseType: "arraybuffer" },
   );
   // 带上原始扩展名（照片是 .jpg，贴纸是 .webp），对外提供时才能给出正确的 Content-Type
-  const ext = path.extname(file.file_path ?? "") || ".jpg";
-  const url = await storage.saveFile(
-    fileId + ext,
-    new Uint8Array(response.data),
-  );
-  return `![image](${url})`;
+  const ext = (path.extname(file.file_path ?? "") || ".jpg").toLowerCase();
+  return {
+    name: fileId + ext,
+    data: new Uint8Array(response.data),
+    type: IMAGE_TYPES[ext] ?? "application/octet-stream",
+  };
 };

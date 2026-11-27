@@ -4,6 +4,8 @@ import {
   saveAbusePolicy,
 } from "@/services/abuse-runtime.service";
 import { createSiteAPIRoutes } from "@/api/site-api.controller";
+import { createChatwootRoutes } from "@/api/chatwoot.controller";
+import { chatwootBindings } from "@/services/chatwoot.service";
 import { siteAPISettings } from "@/services/site-api-runtime.service";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -62,6 +64,14 @@ api.route(
   }),
 );
 api.route("/site-api", createSiteAPIRoutes(siteAPISettings, db.getProjectById));
+api.route(
+  "/chatwoot",
+  createChatwootRoutes(
+    chatwootBindings,
+    db.getProjectById,
+    () => Bun.env.PUBLIC_URL ?? "",
+  ),
+);
 api.route("/settings/ai", createAISettingsRoutes(aiConfig));
 api.route(
   "/knowledge/source",

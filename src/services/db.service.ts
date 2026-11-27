@@ -3,6 +3,7 @@ import {
   reserveIdentityWarning,
 } from "@/services/abuse-state.service";
 import { abuseIdentityKey } from "@/services/abuse-identity.service";
+import { chatwootChannel, chatwootProjectOf } from "@/utils/conversation-id";
 import { SQL } from "bun";
 import path from "path";
 import logger from "@/services/logger.service";
@@ -89,10 +90,14 @@ export const saveAppSetting = async (
 // ---------------------------------------------------------------------------
 
 /**
- * 根据 website_id 获取项目配置，未找到或 `enabled` 为假时返回 `null`
+ * 根据 website_id 获取项目配置，未找到或 `enabled` 为假时返回 `null`。
+ * Chatwoot 会话的 website_id 是 `chatwoot:<项目 id>`
  */
 export const getProject = async (website_id: string) => {
-  const [row] = await sql`
+  const chatwootProject = chatwootProjectOf(website_id);
+  const [row] = chatwootProject
+    ? await sql`select * from project where id = ${chatwootProject} limit 1`
+    : await sql`
     select * from project where "websiteId" = ${website_id} limit 1`;
   if (!row || !row.enabled) return null;
   return toProject(row);
@@ -125,9 +130,12 @@ export const deleteProject = async (id: string) => {
   await sql.begin(async (tx) => {
     const [row] = await tx`
       delete from project where id = ${id} returning "websiteId"`;
-    if (row?.websiteId) {
+    if (!row) return;
+    if (row.websiteId) {
       await tx`delete from session where website_id = ${row.websiteId}`;
     }
+    await tx`delete from session where website_id = ${chatwootChannel(id)}`;
+    await tx`delete from app_setting where key = ${"chatwoot:" + id}`;
   });
 };
 

@@ -3,6 +3,7 @@ import * as db from "@/services/db.service";
 import { Queue } from "bullmq";
 import path from "path";
 import { createResponse } from "@/utils/general";
+import { chatwootChannel } from "@/utils/conversation-id";
 import { connection } from "@/services/redis.service";
 
 const currentFileName = path.basename(
@@ -35,7 +36,9 @@ export default {
     const toDeleteIds: string[] = [];
     for (const session of sessionData) {
       const project = projectData.find(
-        (p) => p.websiteId === session.website_id
+        (p) =>
+          p.websiteId === session.website_id ||
+          chatwootChannel(p.id) === session.website_id
       );
       if (project) {
         const enableTime =
