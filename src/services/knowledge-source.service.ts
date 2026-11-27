@@ -60,7 +60,7 @@ export function convertDocument(
     doc.body
       .replace(
         /<!--access start-->[\s\S]*?<!--access end-->/gi,
-        "共享账号信息请有权限的用户在官网教程中实时查看，不提供或猜测账号密码。",
+        "共享账号信息在官网教程中实时显示，已购买套餐的用户登录后可见。",
       )
       .replace(/<(style|script|iframe)\b[^>]*>[\s\S]*?<\/\1>/gi, "")
       .replace(
@@ -90,7 +90,9 @@ export function convertDocument(
   if (chunk.trim()) chunks.push(chunk.trim());
   return chunks.map((text, index) => {
     const name = title + (chunks.length > 1 ? ` · ${index + 1}` : "");
-    const raw = `文档：${title}\n来源：${docsUrl}（文档 ID ${doc.id}）\n\n${text}\n\n以资料为参考；无法解决时联系人工客服。不要索取账号密码或订阅密钥。`;
+    // Rules for the model belong in the project prompt: text repeated in every
+    // synced document is sent with every reply and drowns out the tutorial.
+    const raw = `文档：${title}\n来源：${docsUrl}（文档 ID ${doc.id}）\n\n${text}`;
     return {
       key: `v2board:${doc.id}:${index}`,
       hash: createHash("sha256")

@@ -23,6 +23,8 @@ test("document normalization removes restricted credentials and dynamic subscrip
     config.docsUrl,
   );
   expect(entries[0]!.raw).toContain("https://docs.example/download");
+  expect(entries[0]!.raw).toContain("已购买套餐的用户登录后可见");
+  expect(entries[0]!.raw).not.toContain("联系人工客服");
   for (const secret of [
     "private-account-password",
     "{{subscribeUrl}}",
