@@ -38,9 +38,11 @@ export function createChatwootAPI(deps: {
     const binding = await deps.binding(project);
     if (!binding?.enabled || !binding.botToken || !binding.baseUrl)
       throw new Error("Chatwoot binding is not enabled");
+    // nginx drops header names with underscores by default, which silently
+    // discards Chatwoot's documented api_access_token header.
     return {
       root: `${binding.baseUrl}/api/v1/accounts`,
-      headers: { api_access_token: binding.botToken },
+      headers: { Authorization: `Bearer ${binding.botToken}` },
     };
   };
   const conversation = async (session: string) => {

@@ -315,7 +315,10 @@ test("API calls target the account conversation with the bot token", async () =>
     { url: `${root}/toggle_typing_status`, body: { typing_status: "on" } },
     { url: `${root}/toggle_status`, body: { status: "open" } },
   ]);
-  expect(calls.every((call) => call.headers?.api_access_token === binding.botToken)).toBe(true);
+  expect(
+    calls.every((call) => call.headers?.Authorization === `Bearer ${binding.botToken}`),
+  ).toBe(true);
+  expect(calls.every((call) => !("api_access_token" in (call.headers ?? {})))).toBe(true);
 
   await client.sendFile(session, { name: "a.png", data: new Uint8Array([1, 2]), type: "image/png" });
   const form = calls.at(-1)!.body as FormData;
